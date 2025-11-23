@@ -40,8 +40,8 @@ build/
 bin/
 
 # Local application state and cache
-.go-starter/
-~/.go-starter/
+.draftdeploy/
+~/.draftdeploy/
 
 # Temporary files
 *.tmp
