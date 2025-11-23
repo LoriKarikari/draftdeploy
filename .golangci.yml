@@ -1,0 +1,117 @@
+version: "2"
+run:
+  go: "1.25"
+  modules-download-mode: readonly
+  tests: true
+linters:
+  enable:
+    - bodyclose
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - revive
+    - rowserrcheck
+    - unconvert
+    - unparam
+    - wastedassign
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Rows).Close
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - appendCombine
+      enabled-tags:
+        - diagnostic
+        - performance
+    gosec:
+      excludes:
+        - G204
+        - G304
+      severity: medium
+      confidence: medium
+    govet:
+      disable:
+        - shadow
+        - fieldalignment
+      enable-all: true
+    misspell:
+      locale: US
+      ignore-rules:
+        - go-starter
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: errorf
+        - name: var-naming
+        - name: receiver-naming
+    unparam:
+      check-exported: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+        path: _test\.go
+      - linters:
+          - all
+        path: (^|/)vendor/
+      - linters:
+          - all
+        path: \.pb\.go$
+      - linters:
+          - all
+        path: mock_.*\.go$
+      - linters:
+          - revive
+        text: 'exported: exported .* should have comment or be unexported'
+      - linters:
+          - revive
+        text: should have a package comment
+      - linters:
+          - errcheck
+        text: Error return value of `viper.BindPFlag` is not checked
+    paths:
+      - vendor
+      - .git
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/LoriKarikari/go-starter
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - .git
+      - third_party$
+      - builtin$
+      - examples$

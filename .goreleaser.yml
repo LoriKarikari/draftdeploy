@@ -1,0 +1,65 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: go-starter
+    main: ./cmd/go-starter
+    binary: go-starter
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - darwin_amd64
+      - darwin_arm64
+      - windows_amd64
+      - windows_arm64
+    ldflags:
+      - -s -w
+      - -X github.com/LoriKarikari/go-starter/internal/version.version={{.Version}}
+      - -X github.com/LoriKarikari/go-starter/internal/version.commit={{.Commit}}
+
+archives:
+  - id: go-starter
+    formats: ["tar.gz"]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+  - id: go-starter-windows
+    formats: ["zip"]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+    ids:
+      - go-starter
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: LoriKarikari
+    name: go-starter
+  prerelease: auto
