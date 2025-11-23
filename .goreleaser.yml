@@ -5,9 +5,9 @@ before:
     - go mod tidy
 
 builds:
-  - id: go-starter
-    main: ./cmd/go-starter
-    binary: go-starter
+  - id: draftdeploy
+    main: ./cmd/draftdeploy
+    binary: draftdeploy
     env:
       - CGO_ENABLED=0
     targets:
@@ -19,11 +19,11 @@ builds:
       - windows_arm64
     ldflags:
       - -s -w
-      - -X github.com/LoriKarikari/go-starter/internal/version.version={{.Version}}
-      - -X github.com/LoriKarikari/go-starter/internal/version.commit={{.Commit}}
+      - -X github.com/LoriKarikari/draftdeploy/internal/version.version={{.Version}}
+      - -X github.com/LoriKarikari/draftdeploy/internal/version.commit={{.Commit}}
 
 archives:
-  - id: go-starter
+  - id: draftdeploy
     formats: ["tar.gz"]
     name_template: >-
       {{ .ProjectName }}_
@@ -33,7 +33,7 @@ archives:
     files:
       - README.md
       - LICENSE
-  - id: go-starter-windows
+  - id: draftdeploy-windows
     formats: ["zip"]
     name_template: >-
       {{ .ProjectName }}_
@@ -44,7 +44,7 @@ archives:
       - README.md
       - LICENSE
     ids:
-      - go-starter
+      - draftdeploy
 
 checksum:
   name_template: "checksums.txt"
@@ -61,5 +61,5 @@ changelog:
 release:
   github:
     owner: LoriKarikari
-    name: go-starter
+    name: draftdeploy
   prerelease: auto

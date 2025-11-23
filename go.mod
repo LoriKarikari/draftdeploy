@@ -1,3 +1,3 @@
-module github.com/LoriKarikari/go-starter
+module github.com/LoriKarikari/draftdeploy
 
 go 1.25
