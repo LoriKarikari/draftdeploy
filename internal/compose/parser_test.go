@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+const composeFileName = "docker-compose.yml"
+
+func loadTestCompose(t *testing.T, yaml string) *Project {
+	t.Helper()
+	tmpDir := t.TempDir()
+	composePath := filepath.Join(tmpDir, composeFileName)
+	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+
+	project, err := Load(composePath)
+	if err != nil {
+		t.Fatalf("failed to load: %v", err)
+	}
+	return project
+}
+
 func TestLoad(t *testing.T) {
 	yaml := `
 services:
@@ -29,17 +46,7 @@ services:
       POSTGRES_PASSWORD: pass
 `
 
-	tmpDir := t.TempDir()
-	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	project, err := Load(composePath)
-	if err != nil {
-		t.Fatalf("failed to load: %v", err)
-	}
-
+	project := loadTestCompose(t, yaml)
 	names := project.GetServiceNames()
 	if len(names) != 3 {
 		t.Errorf("expected 3 services, got %d", len(names))
@@ -56,17 +63,7 @@ services:
       - "443:443"
 `
 
-	tmpDir := t.TempDir()
-	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	project, err := Load(composePath)
-	if err != nil {
-		t.Fatalf("failed to load: %v", err)
-	}
-
+	project := loadTestCompose(t, yaml)
 	ports := project.GetExposedPorts("web")
 	if len(ports) != 2 {
 		t.Errorf("expected 2 ports, got %d", len(ports))
@@ -82,16 +79,7 @@ services:
     build: ./api
 `
 
-	tmpDir := t.TempDir()
-	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	project, err := Load(composePath)
-	if err != nil {
-		t.Fatalf("failed to load: %v", err)
-	}
+	project := loadTestCompose(t, yaml)
 
 	if img := project.GetServiceImage("web"); img != "nginx:alpine" {
 		t.Errorf("expected nginx:alpine, got %s", img)
@@ -115,16 +103,7 @@ services:
     build: ./api
 `
 
-	tmpDir := t.TempDir()
-	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
-		t.Fatalf("failed to write temp file: %v", err)
-	}
-
-	project, err := Load(composePath)
-	if err != nil {
-		t.Fatalf("failed to load: %v", err)
-	}
+	project := loadTestCompose(t, yaml)
 
 	if project.HasBuildConfig("web") {
 		t.Error("expected web to not have build config")
