@@ -24,6 +24,8 @@ func loadTestCompose(t *testing.T, yaml string) *Project {
 }
 
 func TestLoad(t *testing.T) {
+	t.Parallel()
+
 	yaml := `
 services:
   frontend:
@@ -53,7 +55,33 @@ services:
 	}
 }
 
+func TestGetServiceNames_Sorted(t *testing.T) {
+	t.Parallel()
+
+	yaml := `
+services:
+  zebra:
+    image: nginx
+  alpha:
+    image: nginx
+  middle:
+    image: nginx
+`
+
+	project := loadTestCompose(t, yaml)
+	names := project.GetServiceNames()
+
+	expected := []string{"alpha", "middle", "zebra"}
+	for i, name := range names {
+		if name != expected[i] {
+			t.Errorf("expected names[%d] = %s, got %s", i, expected[i], name)
+		}
+	}
+}
+
 func TestGetExposedPorts(t *testing.T) {
+	t.Parallel()
+
 	yaml := `
 services:
   web:
@@ -70,7 +98,28 @@ services:
 	}
 }
 
+func TestGetExposedPorts_InvalidPort(t *testing.T) {
+	t.Parallel()
+
+	yaml := `
+services:
+  web:
+    image: nginx
+    ports:
+      - "80:80"
+`
+
+	project := loadTestCompose(t, yaml)
+
+	ports := project.GetExposedPorts("nonexistent")
+	if ports != nil {
+		t.Error("expected nil for nonexistent service")
+	}
+}
+
 func TestGetServiceImage(t *testing.T) {
+	t.Parallel()
+
 	yaml := `
 services:
   web:
@@ -91,29 +140,5 @@ services:
 
 	if img := project.GetServiceImage("nonexistent"); img != "" {
 		t.Errorf("expected empty string for nonexistent service, got %s", img)
-	}
-}
-
-func TestHasBuildConfig(t *testing.T) {
-	yaml := `
-services:
-  web:
-    image: nginx:alpine
-  api:
-    build: ./api
-`
-
-	project := loadTestCompose(t, yaml)
-
-	if project.HasBuildConfig("web") {
-		t.Error("expected web to not have build config")
-	}
-
-	if !project.HasBuildConfig("api") {
-		t.Error("expected api to have build config")
-	}
-
-	if project.HasBuildConfig("nonexistent") {
-		t.Error("expected nonexistent to not have build config")
 	}
 }

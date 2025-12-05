@@ -1,0 +1,38 @@
+name: 'Draftdeploy'
+description: 'Deploy docker-compose stacks to Azure Container Instances for PR previews'
+author: 'LoriKarikari'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  azure-subscription-id:
+    description: 'Azure subscription ID'
+    required: true
+  azure-location:
+    description: 'Azure region for deployment'
+    required: false
+    default: 'eastus'
+  compose-file:
+    description: 'Path to docker-compose file'
+    required: false
+    default: 'docker-compose.yml'
+  github-token:
+    description: 'GitHub token for PR comments'
+    required: true
+
+outputs:
+  url:
+    description: 'URL of the deployed preview environment'
+  resource-group:
+    description: 'Name of the created Azure resource group'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  env:
+    AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+    AZURE_LOCATION: ${{ inputs.azure-location }}
+    COMPOSE_FILE: ${{ inputs.compose-file }}
+    GITHUB_TOKEN: ${{ inputs.github-token }}

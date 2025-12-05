@@ -11,9 +11,9 @@ import (
 )
 
 type Commenter struct {
-	client *github.Client
-	owner  string
-	repo   string
+	tokenSource oauth2.TokenSource
+	owner       string
+	repo        string
 }
 
 type DeploymentInfo struct {
@@ -31,54 +31,38 @@ const commentMarker = "<!-- draftdeploy -->"
 
 func NewCommenter(token, owner, repo string) *Commenter {
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-	tc := oauth2.NewClient(context.Background(), ts)
-	client := github.NewClient(tc)
-
 	return &Commenter{
-		client: client,
-		owner:  owner,
-		repo:   repo,
+		tokenSource: ts,
+		owner:       owner,
+		repo:        repo,
 	}
+}
+
+func (c *Commenter) getClient(ctx context.Context) *github.Client {
+	tc := oauth2.NewClient(ctx, c.tokenSource)
+	return github.NewClient(tc)
 }
 
 func (c *Commenter) PostDeployment(ctx context.Context, prNumber int, info DeploymentInfo) error {
-	body := c.formatDeploymentComment(info)
-
-	existingID, err := c.findExistingComment(ctx, prNumber)
-	if err != nil {
-		return fmt.Errorf("failed to find existing comment: %w", err)
-	}
-
-	if existingID != 0 {
-		_, _, err = c.client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
-			Body: github.String(body),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to update comment: %w", err)
-		}
-		return nil
-	}
-
-	_, _, err = c.client.Issues.CreateComment(ctx, c.owner, c.repo, prNumber, &github.IssueComment{
-		Body: github.String(body),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create comment: %w", err)
-	}
-
-	return nil
+	body := formatDeploymentComment(info)
+	return c.postComment(ctx, prNumber, body)
 }
 
 func (c *Commenter) PostTeardown(ctx context.Context, prNumber int, info DeploymentInfo) error {
-	body := c.formatTeardownComment(info)
+	body := formatTeardownComment(info)
+	return c.postComment(ctx, prNumber, body)
+}
 
-	existingID, err := c.findExistingComment(ctx, prNumber)
+func (c *Commenter) postComment(ctx context.Context, prNumber int, body string) error {
+	client := c.getClient(ctx)
+
+	existingID, err := c.findExistingComment(ctx, client, prNumber)
 	if err != nil {
 		return fmt.Errorf("failed to find existing comment: %w", err)
 	}
 
 	if existingID != 0 {
-		_, _, err = c.client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
+		_, _, err = client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
 			Body: github.String(body),
 		})
 		if err != nil {
@@ -87,7 +71,7 @@ func (c *Commenter) PostTeardown(ctx context.Context, prNumber int, info Deploym
 		return nil
 	}
 
-	_, _, err = c.client.Issues.CreateComment(ctx, c.owner, c.repo, prNumber, &github.IssueComment{
+	_, _, err = client.Issues.CreateComment(ctx, c.owner, c.repo, prNumber, &github.IssueComment{
 		Body: github.String(body),
 	})
 	if err != nil {
@@ -97,67 +81,74 @@ func (c *Commenter) PostTeardown(ctx context.Context, prNumber int, info Deploym
 	return nil
 }
 
-func (c *Commenter) findExistingComment(ctx context.Context, prNumber int) (int64, error) {
-	comments, _, err := c.client.Issues.ListComments(ctx, c.owner, c.repo, prNumber, nil)
+func (c *Commenter) findExistingComment(ctx context.Context, client *github.Client, prNumber int) (int64, error) {
+	comments, _, err := client.Issues.ListComments(ctx, c.owner, c.repo, prNumber, nil)
 	if err != nil {
 		return 0, err
 	}
 
 	for _, comment := range comments {
 		if comment.Body != nil && strings.Contains(*comment.Body, commentMarker) {
-			return *comment.ID, nil
+			if comment.ID != nil {
+				return *comment.ID, nil
+			}
 		}
 	}
 
 	return 0, nil
 }
 
-func (c *Commenter) formatDeploymentComment(info DeploymentInfo) string {
+func formatDeploymentComment(info DeploymentInfo) string {
 	var sb strings.Builder
+	sb.Grow(512)
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	sb.WriteString(fmt.Sprintf("**URL:** http://%s\n\n", info.FQDN))
+	fmt.Fprintf(&sb, "**URL:** http://%s\n\n", info.FQDN)
 
 	if len(info.Services) > 0 {
 		sb.WriteString("**Services:**\n")
 		for _, svc := range info.Services {
-			ports := make([]string, len(svc.Ports))
-			for i, p := range svc.Ports {
-				ports[i] = fmt.Sprintf("%d", p)
-			}
-			sb.WriteString(fmt.Sprintf("- `%s` (ports: %s)\n", svc.Name, strings.Join(ports, ", ")))
+			fmt.Fprintf(&sb, "- `%s` (ports: %s)\n", svc.Name, formatPorts(svc.Ports))
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("**Deploy time:** %s\n", info.DeployTime.Round(time.Second)))
+	fmt.Fprintf(&sb, "**Deploy time:** %s\n", info.DeployTime.Round(time.Second))
 
 	return sb.String()
 }
 
-func (c *Commenter) formatTeardownComment(info DeploymentInfo) string {
+func formatTeardownComment(info DeploymentInfo) string {
 	var sb strings.Builder
+	sb.Grow(512)
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	sb.WriteString("~~**URL:** http://" + info.FQDN + "~~\n\n")
+	fmt.Fprintf(&sb, "~~**URL:** http://%s~~\n\n", info.FQDN)
 
 	if len(info.Services) > 0 {
 		sb.WriteString("**Services:**\n")
 		for _, svc := range info.Services {
-			ports := make([]string, len(svc.Ports))
-			for i, p := range svc.Ports {
-				ports[i] = fmt.Sprintf("%d", p)
-			}
-			sb.WriteString(fmt.Sprintf("- `%s` (ports: %s)\n", svc.Name, strings.Join(ports, ", ")))
+			fmt.Fprintf(&sb, "- `%s` (ports: %s)\n", svc.Name, formatPorts(svc.Ports))
 		}
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("**Deploy time:** %s\n\n", info.DeployTime.Round(time.Second)))
+	fmt.Fprintf(&sb, "**Deploy time:** %s\n\n", info.DeployTime.Round(time.Second))
 	sb.WriteString("---\n")
 	sb.WriteString("**Status:** Preview environment has been torn down.\n")
 
 	return sb.String()
+}
+
+func formatPorts(ports []int32) string {
+	if len(ports) == 0 {
+		return "none"
+	}
+	strs := make([]string, len(ports))
+	for i, p := range ports {
+		strs[i] = fmt.Sprintf("%d", p)
+	}
+	return strings.Join(strs, ", ")
 }
