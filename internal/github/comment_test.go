@@ -44,7 +44,15 @@ func TestFormatDeploymentComment(t *testing.T) {
 func TestFormatTeardownComment(t *testing.T) {
 	c := &Commenter{}
 
-	body := c.formatTeardownComment()
+	info := DeploymentInfo{
+		FQDN: "myapp-pr123.eastus.azurecontainer.io",
+		Services: []ServiceInfo{
+			{Name: "frontend", Ports: []int32{80}},
+		},
+		DeployTime: 45 * time.Second,
+	}
+
+	body := c.formatTeardownComment(info)
 
 	if !strings.Contains(body, commentMarker) {
 		t.Error("expected comment to contain marker")
@@ -52,6 +60,14 @@ func TestFormatTeardownComment(t *testing.T) {
 
 	if !strings.Contains(body, "torn down") {
 		t.Error("expected comment to mention teardown")
+	}
+
+	if !strings.Contains(body, "~~**URL:**") {
+		t.Error("expected URL to be struck through")
+	}
+
+	if !strings.Contains(body, "`frontend`") {
+		t.Error("expected comment to preserve service info")
 	}
 }
 

@@ -69,8 +69,8 @@ func (c *Commenter) PostDeployment(ctx context.Context, prNumber int, info Deplo
 	return nil
 }
 
-func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
-	body := c.formatTeardownComment()
+func (c *Commenter) PostTeardown(ctx context.Context, prNumber int, info DeploymentInfo) error {
+	body := c.formatTeardownComment(info)
 
 	existingID, err := c.findExistingComment(ctx, prNumber)
 	if err != nil {
@@ -136,12 +136,28 @@ func (c *Commenter) formatDeploymentComment(info DeploymentInfo) string {
 	return sb.String()
 }
 
-func (c *Commenter) formatTeardownComment() string {
+func (c *Commenter) formatTeardownComment(info DeploymentInfo) string {
 	var sb strings.Builder
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	sb.WriteString("Preview environment has been torn down.\n")
+	sb.WriteString("~~**URL:** http://" + info.FQDN + "~~\n\n")
+
+	if len(info.Services) > 0 {
+		sb.WriteString("**Services:**\n")
+		for _, svc := range info.Services {
+			ports := make([]string, len(svc.Ports))
+			for i, p := range svc.Ports {
+				ports[i] = fmt.Sprintf("%d", p)
+			}
+			sb.WriteString(fmt.Sprintf("- `%s` (ports: %s)\n", svc.Name, strings.Join(ports, ", ")))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("**Deploy time:** %s\n\n", info.DeployTime.Round(time.Second)))
+	sb.WriteString("---\n")
+	sb.WriteString("**Status:** Preview environment has been torn down.\n")
 
 	return sb.String()
 }
