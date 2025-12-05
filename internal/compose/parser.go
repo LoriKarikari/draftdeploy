@@ -48,16 +48,16 @@ func (p *Project) GetServiceNames() []string {
 	return names
 }
 
-func (p *Project) GetExposedPorts(serviceName string) []uint32 {
+func (p *Project) GetExposedPorts(serviceName string) []int32 {
 	service, ok := p.Services[serviceName]
 	if !ok {
 		return nil
 	}
 
-	var ports []uint32
+	var ports []int32
 	for _, port := range service.Ports {
-		if port.Published != "" {
-			ports = append(ports, port.Target)
+		if port.Published != "" && port.Target <= 65535 {
+			ports = append(ports, int32(port.Target))
 		}
 	}
 	return ports
