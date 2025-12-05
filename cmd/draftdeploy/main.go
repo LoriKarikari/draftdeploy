@@ -59,14 +59,11 @@ type teardownConfig struct {
 	resourceGroup  string
 }
 
-var logger *slog.Logger
-
 func main() {
-	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	if err := run(); err != nil {
-		logger.Error("application failed", "error", err)
+		slog.Error("application failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -96,7 +93,7 @@ func run() error {
 	owner := event.Repository.Owner.Login
 	repo := event.Repository.Name
 
-	logger.Info("processing PR event",
+	slog.Info("processing PR event",
 		"pr_number", prNumber,
 		"action", event.Action,
 		"owner", owner,
@@ -155,7 +152,7 @@ func run() error {
 			resourceGroup:  resourceGroup,
 		})
 	default:
-		logger.Info("ignoring action", "action", event.Action)
+		slog.Info("ignoring action", "action", event.Action)
 		return nil
 	}
 }
@@ -192,7 +189,7 @@ func sanitizeDNSLabel(owner, repo string, prNumber int) (string, error) {
 func setGitHubOutput(name, value string) error {
 	outputFile := os.Getenv("GITHUB_OUTPUT")
 	if outputFile == "" {
-		logger.Info("github output", name, value)
+		slog.Info("github output", name, value)
 		return nil
 	}
 
@@ -223,7 +220,7 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 	for _, name := range project.GetServiceNames() {
 		image := project.GetServiceImage(name)
 		if image == "" {
-			logger.Info("skipping service with build config", "service", name)
+			slog.Info("skipping service with build config", "service", name)
 			continue
 		}
 
@@ -263,14 +260,14 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 
-			logger.Warn("deployment failed, attempting cleanup", "resource_group", cfg.resourceGroup)
+			slog.Warn("deployment failed, attempting cleanup", "resource_group", cfg.resourceGroup)
 			if err := deployer.DeleteResourceGroup(cleanupCtx, cfg.resourceGroup); err != nil {
-				logger.Error("failed to cleanup resource group", "error", err)
+				slog.Error("failed to cleanup resource group", "error", err)
 			}
 		}
 	}()
 
-	logger.Info("deploying to Azure", "resource_group", cfg.resourceGroup, "location", cfg.location)
+	slog.Info("deploying to Azure", "resource_group", cfg.resourceGroup, "location", cfg.location)
 	fqdn, err := deployer.Deploy(ctx, azure.DeployConfig{
 		ResourceGroup: cfg.resourceGroup,
 		Name:          cfg.containerName,
@@ -283,7 +280,7 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 	}
 
 	deployTime := time.Since(start)
-	logger.Info("deployment complete",
+	slog.Info("deployment complete",
 		"fqdn", fqdn,
 		"deploy_time", deployTime.Round(time.Second))
 
@@ -294,15 +291,15 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 			Services:   services,
 			DeployTime: deployTime,
 		}); err != nil {
-			logger.Warn("failed to post comment", "error", err)
+			slog.Warn("failed to post comment", "error", err)
 		}
 	}
 
 	if err := setGitHubOutput("url", fmt.Sprintf("http://%s", fqdn)); err != nil {
-		logger.Warn("failed to set url output", "error", err)
+		slog.Warn("failed to set url output", "error", err)
 	}
 	if err := setGitHubOutput("resource-group", cfg.resourceGroup); err != nil {
-		logger.Warn("failed to set resource-group output", "error", err)
+		slog.Warn("failed to set resource-group output", "error", err)
 	}
 
 	deploymentSucceeded = true
@@ -320,17 +317,17 @@ func teardown(ctx context.Context, cfg teardownConfig) error {
 		return fmt.Errorf("failed to create deployer: %w", err)
 	}
 
-	logger.Info("tearing down resource group", "resource_group", cfg.resourceGroup)
+	slog.Info("tearing down resource group", "resource_group", cfg.resourceGroup)
 	if err := deployer.DeleteResourceGroup(ctx, cfg.resourceGroup); err != nil {
 		return fmt.Errorf("failed to delete resource group: %w", err)
 	}
 
-	logger.Info("teardown complete")
+	slog.Info("teardown complete")
 
 	if cfg.githubToken != "" {
 		commenter := github.NewCommenter(cfg.githubToken, cfg.owner, cfg.repo)
 		if err := commenter.PostTeardown(ctx, cfg.prNumber, github.DeploymentInfo{}); err != nil {
-			logger.Warn("failed to post teardown comment", "error", err)
+			slog.Warn("failed to post teardown comment", "error", err)
 		}
 	}
 
