@@ -4,16 +4,20 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/cenkalti/backoff/v4"
 )
 
 const (
 	DefaultCPU      = 0.5
 	DefaultMemoryGB = 0.5
+	maxRetryTime    = 2 * time.Minute
 )
 
 type Deployer struct {
@@ -58,10 +62,20 @@ func NewDeployer(credential azcore.TokenCredential, subscriptionID string) (*Dep
 }
 
 func (d *Deployer) ensureResourceGroup(ctx context.Context, name, location string) error {
-	_, err := d.rgClient.CreateOrUpdate(ctx, name, armresources.ResourceGroup{
-		Location: to.Ptr(location),
-	}, nil)
-	if err != nil {
+	operation := func() error {
+		_, err := d.rgClient.CreateOrUpdate(ctx, name, armresources.ResourceGroup{
+			Location: to.Ptr(location),
+		}, nil)
+		if err != nil {
+			if isPermanentError(err) {
+				return backoff.Permanent(err)
+			}
+			return err
+		}
+		return nil
+	}
+
+	if err := retryWithBackoff(ctx, operation); err != nil {
 		return fmt.Errorf("failed to create resource group: %w", err)
 	}
 	return nil
@@ -72,6 +86,35 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 		return "", err
 	}
 
+	containerGroup := buildContainerGroup(config)
+
+	var result armcontainerinstance.ContainerGroupsClientCreateOrUpdateResponse
+
+	operation := func() error {
+		poller, err := d.containerClient.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerGroup, nil)
+		if err != nil {
+			if isPermanentError(err) {
+				return backoff.Permanent(err)
+			}
+			return fmt.Errorf("failed to create container group: %w", err)
+		}
+
+		res, err := poller.PollUntilDone(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to wait for container group: %w", err)
+		}
+		result = res
+		return nil
+	}
+
+	if err := retryWithBackoff(ctx, operation); err != nil {
+		return "", err
+	}
+
+	return extractFQDN(result)
+}
+
+func buildContainerGroup(config DeployConfig) armcontainerinstance.ContainerGroup {
 	containers := make([]*armcontainerinstance.Container, 0, len(config.Containers))
 	exposedPorts := make([]*armcontainerinstance.Port, 0)
 
@@ -115,7 +158,7 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 		})
 	}
 
-	containerGroup := armcontainerinstance.ContainerGroup{
+	return armcontainerinstance.ContainerGroup{
 		Location: to.Ptr(config.Location),
 		Properties: &armcontainerinstance.ContainerGroupPropertiesProperties{
 			Containers:    containers,
@@ -128,18 +171,6 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 			},
 		},
 	}
-
-	poller, err := d.containerClient.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerGroup, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create container group: %w", err)
-	}
-
-	result, err := poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to wait for container group: %w", err)
-	}
-
-	return extractFQDN(result)
 }
 
 func buildEnvVars(env map[string]string) []*armcontainerinstance.EnvironmentVariable {
@@ -177,29 +208,63 @@ func extractFQDN(result armcontainerinstance.ContainerGroupsClientCreateOrUpdate
 }
 
 func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error {
-	poller, err := d.containerClient.BeginDelete(ctx, resourceGroup, name, nil)
-	if err != nil {
-		return fmt.Errorf("failed to delete container group: %w", err)
+	operation := func() error {
+		poller, err := d.containerClient.BeginDelete(ctx, resourceGroup, name, nil)
+		if err != nil {
+			if isPermanentError(err) {
+				return backoff.Permanent(err)
+			}
+			return fmt.Errorf("failed to delete container group: %w", err)
+		}
+
+		_, err = poller.PollUntilDone(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to wait for container group deletion: %w", err)
+		}
+		return nil
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to wait for container group deletion: %w", err)
-	}
-
-	return nil
+	return retryWithBackoff(ctx, operation)
 }
 
 func (d *Deployer) DeleteResourceGroup(ctx context.Context, name string) error {
-	poller, err := d.rgClient.BeginDelete(ctx, name, nil)
-	if err != nil {
-		return fmt.Errorf("failed to delete resource group: %w", err)
+	operation := func() error {
+		poller, err := d.rgClient.BeginDelete(ctx, name, nil)
+		if err != nil {
+			if isPermanentError(err) {
+				return backoff.Permanent(err)
+			}
+			return fmt.Errorf("failed to delete resource group: %w", err)
+		}
+
+		_, err = poller.PollUntilDone(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to wait for resource group deletion: %w", err)
+		}
+		return nil
 	}
 
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to wait for resource group deletion: %w", err)
-	}
+	return retryWithBackoff(ctx, operation)
+}
 
-	return nil
+func retryWithBackoff(ctx context.Context, operation func() error) error {
+	expBackoff := backoff.NewExponentialBackOff()
+	expBackoff.MaxElapsedTime = maxRetryTime
+	return backoff.Retry(operation, backoff.WithContext(expBackoff, ctx))
+}
+
+func isPermanentError(err error) bool {
+	errStr := err.Error()
+	permanentErrors := []string{
+		"InvalidParameter",
+		"InvalidResourceGroup",
+		"AuthorizationFailed",
+		"InvalidSubscriptionId",
+	}
+	for _, pe := range permanentErrors {
+		if strings.Contains(errStr, pe) {
+			return true
+		}
+	}
+	return false
 }
