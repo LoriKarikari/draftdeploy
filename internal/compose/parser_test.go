@@ -31,7 +31,7 @@ services:
 
 	tmpDir := t.TempDir()
 	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0644); err != nil {
+	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 
@@ -58,7 +58,7 @@ services:
 
 	tmpDir := t.TempDir()
 	composePath := filepath.Join(tmpDir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(yaml), 0644); err != nil {
+	if err := os.WriteFile(composePath, []byte(yaml), 0o644); err != nil {
 		t.Fatalf("failed to write temp file: %v", err)
 	}
 

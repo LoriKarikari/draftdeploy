@@ -37,7 +37,7 @@ test-coverage:
 lint:
 	@if ! which golangci-lint > /dev/null; then \
 		echo "golangci-lint not found, installing..."; \
-		go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest; \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest; \
 	fi
 	golangci-lint run ./...
 
@@ -51,8 +51,11 @@ gosec:
 
 .PHONY: fmt
 fmt:
-	go fmt ./...
-	gofmt -s -w .
+	@if ! which gofumpt > /dev/null; then \
+		echo "gofumpt not found, installing..."; \
+		go install mvdan.cc/gofumpt@latest; \
+	fi
+	gofumpt -w .
 
 .PHONY: vet
 vet:
