@@ -28,6 +28,28 @@ type GitHubEvent struct {
 	} `json:"repository"`
 }
 
+type deployConfig struct {
+	subscriptionID string
+	location       string
+	composeFile    string
+	githubToken    string
+	owner          string
+	repo           string
+	prNumber       int
+	resourceGroup  string
+	containerName  string
+	dnsLabel       string
+}
+
+type teardownConfig struct {
+	subscriptionID string
+	githubToken    string
+	owner          string
+	repo           string
+	prNumber       int
+	resourceGroup  string
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -112,19 +134,6 @@ func run() error {
 	}
 }
 
-type deployConfig struct {
-	subscriptionID string
-	location       string
-	composeFile    string
-	githubToken    string
-	owner          string
-	repo           string
-	prNumber       int
-	resourceGroup  string
-	containerName  string
-	dnsLabel       string
-}
-
 func deploy(ctx context.Context, cfg deployConfig) error {
 	start := time.Now()
 
@@ -204,15 +213,6 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 	fmt.Printf("::set-output name=resource-group::%s\n", cfg.resourceGroup)
 
 	return nil
-}
-
-type teardownConfig struct {
-	subscriptionID string
-	githubToken    string
-	owner          string
-	repo           string
-	prNumber       int
-	resourceGroup  string
 }
 
 func teardown(ctx context.Context, cfg teardownConfig) error {
