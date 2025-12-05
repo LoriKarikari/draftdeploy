@@ -206,14 +206,7 @@ func setGitHubOutput(name, value string) error {
 	return nil
 }
 
-func deploy(ctx context.Context, cfg deployConfig) error {
-	start := time.Now()
-
-	project, err := compose.Load(cfg.composeFile)
-	if err != nil {
-		return fmt.Errorf("failed to load compose file: %w", err)
-	}
-
+func parseComposeServices(project *compose.Project) ([]azure.ContainerConfig, []github.ServiceInfo) {
 	var containers []azure.ContainerConfig
 	var services []github.ServiceInfo
 
@@ -240,6 +233,18 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 		})
 	}
 
+	return containers, services
+}
+
+func deploy(ctx context.Context, cfg deployConfig) error {
+	start := time.Now()
+
+	project, err := compose.Load(cfg.composeFile)
+	if err != nil {
+		return fmt.Errorf("failed to load compose file: %w", err)
+	}
+
+	containers, services := parseComposeServices(project)
 	if len(containers) == 0 {
 		return fmt.Errorf("no deployable services found (all have build configs)")
 	}
