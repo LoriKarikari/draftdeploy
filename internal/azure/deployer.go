@@ -123,3 +123,17 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 
 	return "", nil
 }
+
+func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error {
+	poller, err := d.client.BeginDelete(ctx, resourceGroup, name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete container group: %w", err)
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to wait for container group deletion: %w", err)
+	}
+
+	return nil
+}
