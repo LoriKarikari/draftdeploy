@@ -44,7 +44,7 @@ linters:
     misspell:
       locale: US
       ignore-rules:
-        - go-starter
+        - draftdeploy
     revive:
       rules:
         - name: blank-imports
@@ -81,7 +81,7 @@ linters:
         path: mock_.*\.go$
       - linters:
           - revive
-        text: 'exported: exported .* should have comment or be unexported'
+        text: "exported: exported .* should have comment or be unexported"
       - linters:
           - revive
         text: should have a package comment
@@ -106,7 +106,7 @@ formatters:
       extra-rules: true
     goimports:
       local-prefixes:
-        - github.com/LoriKarikari/go-starter
+        - github.com/LoriKarikari/draftdeploy
   exclusions:
     generated: lax
     paths:
