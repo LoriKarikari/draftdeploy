@@ -16,6 +16,23 @@ type Deployer struct {
 	subscriptionID  string
 }
 
+type DeployConfig struct {
+	ResourceGroup string
+	Name          string
+	Location      string
+	Containers    []ContainerConfig
+	DNSNameLabel  string
+}
+
+type ContainerConfig struct {
+	Name        string
+	Image       string
+	Ports       []int32
+	Environment map[string]string
+	CPU         float64
+	MemoryGB    float64
+}
+
 func NewDeployer(credential azcore.TokenCredential, subscriptionID string) (*Deployer, error) {
 	containerClient, err := armcontainerinstance.NewContainerGroupsClient(subscriptionID, credential, nil)
 	if err != nil {
@@ -42,23 +59,6 @@ func (d *Deployer) ensureResourceGroup(ctx context.Context, name, location strin
 		return fmt.Errorf("failed to create resource group: %w", err)
 	}
 	return nil
-}
-
-type DeployConfig struct {
-	ResourceGroup string
-	Name          string
-	Location      string
-	Containers    []ContainerConfig
-	DNSNameLabel  string
-}
-
-type ContainerConfig struct {
-	Name        string
-	Image       string
-	Ports       []int32
-	Environment map[string]string
-	CPU         float64
-	MemoryGB    float64
 }
 
 func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, error) {
