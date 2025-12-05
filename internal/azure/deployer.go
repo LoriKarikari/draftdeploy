@@ -7,23 +7,41 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
 
 type Deployer struct {
-	client         *armcontainerinstance.ContainerGroupsClient
-	subscriptionID string
+	containerClient *armcontainerinstance.ContainerGroupsClient
+	rgClient        *armresources.ResourceGroupsClient
+	subscriptionID  string
 }
 
 func NewDeployer(credential azcore.TokenCredential, subscriptionID string) (*Deployer, error) {
-	client, err := armcontainerinstance.NewContainerGroupsClient(subscriptionID, credential, nil)
+	containerClient, err := armcontainerinstance.NewContainerGroupsClient(subscriptionID, credential, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container groups client: %w", err)
 	}
 
+	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource groups client: %w", err)
+	}
+
 	return &Deployer{
-		client:         client,
-		subscriptionID: subscriptionID,
+		containerClient: containerClient,
+		rgClient:        rgClient,
+		subscriptionID:  subscriptionID,
 	}, nil
+}
+
+func (d *Deployer) ensureResourceGroup(ctx context.Context, name, location string) error {
+	_, err := d.rgClient.CreateOrUpdate(ctx, name, armresources.ResourceGroup{
+		Location: to.Ptr(location),
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create resource group: %w", err)
+	}
+	return nil
 }
 
 type DeployConfig struct {
@@ -44,6 +62,10 @@ type ContainerConfig struct {
 }
 
 func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, error) {
+	if err := d.ensureResourceGroup(ctx, config.ResourceGroup, config.Location); err != nil {
+		return "", err
+	}
+
 	containers := make([]*armcontainerinstance.Container, 0, len(config.Containers))
 	exposedPorts := make([]*armcontainerinstance.Port, 0)
 
@@ -107,7 +129,7 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 		},
 	}
 
-	poller, err := d.client.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerGroup, nil)
+	poller, err := d.containerClient.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerGroup, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container group: %w", err)
 	}
@@ -125,7 +147,7 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 }
 
 func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error {
-	poller, err := d.client.BeginDelete(ctx, resourceGroup, name, nil)
+	poller, err := d.containerClient.BeginDelete(ctx, resourceGroup, name, nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete container group: %w", err)
 	}
@@ -133,6 +155,20 @@ func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error
 	_, err = poller.PollUntilDone(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to wait for container group deletion: %w", err)
+	}
+
+	return nil
+}
+
+func (d *Deployer) DeleteResourceGroup(ctx context.Context, name string) error {
+	poller, err := d.rgClient.BeginDelete(ctx, name, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete resource group: %w", err)
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to wait for resource group deletion: %w", err)
 	}
 
 	return nil
