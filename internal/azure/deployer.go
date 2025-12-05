@@ -3,11 +3,17 @@ package azure
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+)
+
+const (
+	DefaultCPU      = 0.5
+	DefaultMemoryGB = 0.5
 )
 
 type Deployer struct {
@@ -82,21 +88,15 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 			})
 		}
 
-		envVars := make([]*armcontainerinstance.EnvironmentVariable, 0, len(c.Environment))
-		for k, v := range c.Environment {
-			envVars = append(envVars, &armcontainerinstance.EnvironmentVariable{
-				Name:  to.Ptr(k),
-				Value: to.Ptr(v),
-			})
-		}
+		envVars := buildEnvVars(c.Environment)
 
 		cpu := c.CPU
 		if cpu == 0 {
-			cpu = 0.5
+			cpu = DefaultCPU
 		}
 		mem := c.MemoryGB
 		if mem == 0 {
-			mem = 0.5
+			mem = DefaultMemoryGB
 		}
 
 		containers = append(containers, &armcontainerinstance.Container{
@@ -139,11 +139,41 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 		return "", fmt.Errorf("failed to wait for container group: %w", err)
 	}
 
-	if result.Properties.IPAddress != nil && result.Properties.IPAddress.Fqdn != nil {
-		return *result.Properties.IPAddress.Fqdn, nil
+	return extractFQDN(result)
+}
+
+func buildEnvVars(env map[string]string) []*armcontainerinstance.EnvironmentVariable {
+	if len(env) == 0 {
+		return nil
 	}
 
-	return "", nil
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	envVars := make([]*armcontainerinstance.EnvironmentVariable, 0, len(env))
+	for _, k := range keys {
+		envVars = append(envVars, &armcontainerinstance.EnvironmentVariable{
+			Name:  to.Ptr(k),
+			Value: to.Ptr(env[k]),
+		})
+	}
+	return envVars
+}
+
+func extractFQDN(result armcontainerinstance.ContainerGroupsClientCreateOrUpdateResponse) (string, error) {
+	if result.Properties == nil {
+		return "", fmt.Errorf("container group has no properties")
+	}
+	if result.Properties.IPAddress == nil {
+		return "", fmt.Errorf("container group has no IP address")
+	}
+	if result.Properties.IPAddress.Fqdn == nil {
+		return "", fmt.Errorf("container group has no FQDN")
+	}
+	return *result.Properties.IPAddress.Fqdn, nil
 }
 
 func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error {

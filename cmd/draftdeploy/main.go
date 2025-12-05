@@ -4,14 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/LoriKarikari/draftdeploy/internal/azure"
 	"github.com/LoriKarikari/draftdeploy/internal/compose"
 	"github.com/LoriKarikari/draftdeploy/internal/github"
+)
+
+const (
+	defaultCPU      = 0.5
+	defaultMemoryGB = 0.5
+	deployTimeout   = 15 * time.Minute
+	teardownTimeout = 5 * time.Minute
 )
 
 type GitHubEvent struct {
@@ -50,16 +59,19 @@ type teardownConfig struct {
 	resourceGroup  string
 }
 
+var logger *slog.Logger
+
 func main() {
+	logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		logger.Error("application failed", "error", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	ctx := context.Background()
-
 	eventPath := os.Getenv("GITHUB_EVENT_PATH")
 	if eventPath == "" {
 		return fmt.Errorf("GITHUB_EVENT_PATH not set")
@@ -84,12 +96,16 @@ func run() error {
 	owner := event.Repository.Owner.Login
 	repo := event.Repository.Name
 
-	fmt.Printf("PR #%d action: %s\n", prNumber, event.Action)
+	logger.Info("processing PR event",
+		"pr_number", prNumber,
+		"action", event.Action,
+		"owner", owner,
+		"repo", repo)
 
-	subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
-	location := os.Getenv("AZURE_LOCATION")
-	composeFile := os.Getenv("COMPOSE_FILE")
-	githubToken := os.Getenv("GITHUB_TOKEN")
+	subscriptionID := strings.TrimSpace(os.Getenv("AZURE_SUBSCRIPTION_ID"))
+	location := strings.TrimSpace(os.Getenv("AZURE_LOCATION"))
+	composeFile := strings.TrimSpace(os.Getenv("COMPOSE_FILE"))
+	githubToken := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 
 	if subscriptionID == "" {
 		return fmt.Errorf("AZURE_SUBSCRIPTION_ID not set")
@@ -101,12 +117,20 @@ func run() error {
 		composeFile = "docker-compose.yml"
 	}
 
-	resourceGroup := fmt.Sprintf("draftdeploy-%s-%s-pr%d", owner, repo, prNumber)
+	resourceGroup, err := sanitizeResourceGroupName(owner, repo, prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid resource group name: %w", err)
+	}
 	containerName := fmt.Sprintf("dd-pr%d", prNumber)
-	dnsLabel := fmt.Sprintf("dd-%s-%s-pr%d", strings.ToLower(owner), strings.ToLower(repo), prNumber)
+	dnsLabel, err := sanitizeDNSLabel(owner, repo, prNumber)
+	if err != nil {
+		return fmt.Errorf("invalid DNS label: %w", err)
+	}
 
 	switch event.Action {
 	case "opened", "synchronize", "reopened":
+		ctx, cancel := context.WithTimeout(context.Background(), deployTimeout)
+		defer cancel()
 		return deploy(ctx, deployConfig{
 			subscriptionID: subscriptionID,
 			location:       location,
@@ -120,6 +144,8 @@ func run() error {
 			dnsLabel:       dnsLabel,
 		})
 	case "closed":
+		ctx, cancel := context.WithTimeout(context.Background(), teardownTimeout)
+		defer cancel()
 		return teardown(ctx, teardownConfig{
 			subscriptionID: subscriptionID,
 			githubToken:    githubToken,
@@ -129,9 +155,58 @@ func run() error {
 			resourceGroup:  resourceGroup,
 		})
 	default:
-		fmt.Printf("Ignoring action: %s\n", event.Action)
+		logger.Info("ignoring action", "action", event.Action)
 		return nil
 	}
+}
+
+func sanitizeResourceGroupName(owner, repo string, prNumber int) (string, error) {
+	re := regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
+	cleanOwner := re.ReplaceAllString(owner, "-")
+	cleanRepo := re.ReplaceAllString(repo, "-")
+
+	name := fmt.Sprintf("draftdeploy-%s-%s-pr%d", cleanOwner, cleanRepo, prNumber)
+	if len(name) > 90 {
+		return "", fmt.Errorf("resource group name too long: %d chars (max 90)", len(name))
+	}
+	return name, nil
+}
+
+func sanitizeDNSLabel(owner, repo string, prNumber int) (string, error) {
+	re := regexp.MustCompile(`[^a-z0-9-]`)
+	cleanOwner := re.ReplaceAllString(strings.ToLower(owner), "-")
+	cleanRepo := re.ReplaceAllString(strings.ToLower(repo), "-")
+
+	label := fmt.Sprintf("dd-%s-%s-pr%d", cleanOwner, cleanRepo, prNumber)
+	label = strings.Trim(label, "-")
+
+	if len(label) < 3 {
+		return "", fmt.Errorf("DNS label too short: %d chars (min 3)", len(label))
+	}
+	if len(label) > 63 {
+		label = fmt.Sprintf("dd-pr%d", prNumber)
+	}
+	return label, nil
+}
+
+func setGitHubOutput(name, value string) error {
+	outputFile := os.Getenv("GITHUB_OUTPUT")
+	if outputFile == "" {
+		logger.Info("github output", name, value)
+		return nil
+	}
+
+	// #nosec G304 G302 -- GITHUB_OUTPUT is a trusted path from GitHub Actions runtime
+	f, err := os.OpenFile(outputFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open GITHUB_OUTPUT: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := fmt.Fprintf(f, "%s=%s\n", name, value); err != nil {
+		return fmt.Errorf("failed to write output: %w", err)
+	}
+	return nil
 }
 
 func deploy(ctx context.Context, cfg deployConfig) error {
@@ -148,7 +223,7 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 	for _, name := range project.GetServiceNames() {
 		image := project.GetServiceImage(name)
 		if image == "" {
-			fmt.Printf("Skipping service %s (has build config, no image)\n", name)
+			logger.Info("skipping service with build config", "service", name)
 			continue
 		}
 
@@ -158,8 +233,8 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 			Name:     name,
 			Image:    image,
 			Ports:    ports,
-			CPU:      0.5,
-			MemoryGB: 0.5,
+			CPU:      defaultCPU,
+			MemoryGB: defaultMemoryGB,
 		})
 
 		services = append(services, github.ServiceInfo{
@@ -182,7 +257,20 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 		return fmt.Errorf("failed to create deployer: %w", err)
 	}
 
-	fmt.Printf("Deploying to Azure...\n")
+	var deploymentSucceeded bool
+	defer func() {
+		if !deploymentSucceeded {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			logger.Warn("deployment failed, attempting cleanup", "resource_group", cfg.resourceGroup)
+			if err := deployer.DeleteResourceGroup(cleanupCtx, cfg.resourceGroup); err != nil {
+				logger.Error("failed to cleanup resource group", "error", err)
+			}
+		}
+	}()
+
+	logger.Info("deploying to Azure", "resource_group", cfg.resourceGroup, "location", cfg.location)
 	fqdn, err := deployer.Deploy(ctx, azure.DeployConfig{
 		ResourceGroup: cfg.resourceGroup,
 		Name:          cfg.containerName,
@@ -195,23 +283,29 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 	}
 
 	deployTime := time.Since(start)
-	fmt.Printf("Deployed to: http://%s (took %s)\n", fqdn, deployTime.Round(time.Second))
+	logger.Info("deployment complete",
+		"fqdn", fqdn,
+		"deploy_time", deployTime.Round(time.Second))
 
 	if cfg.githubToken != "" {
 		commenter := github.NewCommenter(cfg.githubToken, cfg.owner, cfg.repo)
-		err = commenter.PostDeployment(ctx, cfg.prNumber, github.DeploymentInfo{
+		if err := commenter.PostDeployment(ctx, cfg.prNumber, github.DeploymentInfo{
 			FQDN:       fqdn,
 			Services:   services,
 			DeployTime: deployTime,
-		})
-		if err != nil {
-			fmt.Printf("Warning: failed to post comment: %v\n", err)
+		}); err != nil {
+			logger.Warn("failed to post comment", "error", err)
 		}
 	}
 
-	fmt.Printf("::set-output name=url::http://%s\n", fqdn)
-	fmt.Printf("::set-output name=resource-group::%s\n", cfg.resourceGroup)
+	if err := setGitHubOutput("url", fmt.Sprintf("http://%s", fqdn)); err != nil {
+		logger.Warn("failed to set url output", "error", err)
+	}
+	if err := setGitHubOutput("resource-group", cfg.resourceGroup); err != nil {
+		logger.Warn("failed to set resource-group output", "error", err)
+	}
 
+	deploymentSucceeded = true
 	return nil
 }
 
@@ -226,19 +320,17 @@ func teardown(ctx context.Context, cfg teardownConfig) error {
 		return fmt.Errorf("failed to create deployer: %w", err)
 	}
 
-	fmt.Printf("Tearing down resource group: %s\n", cfg.resourceGroup)
-	err = deployer.DeleteResourceGroup(ctx, cfg.resourceGroup)
-	if err != nil {
+	logger.Info("tearing down resource group", "resource_group", cfg.resourceGroup)
+	if err := deployer.DeleteResourceGroup(ctx, cfg.resourceGroup); err != nil {
 		return fmt.Errorf("failed to delete resource group: %w", err)
 	}
 
-	fmt.Println("Teardown complete")
+	logger.Info("teardown complete")
 
 	if cfg.githubToken != "" {
 		commenter := github.NewCommenter(cfg.githubToken, cfg.owner, cfg.repo)
-		err = commenter.PostTeardown(ctx, cfg.prNumber, github.DeploymentInfo{})
-		if err != nil {
-			fmt.Printf("Warning: failed to post teardown comment: %v\n", err)
+		if err := commenter.PostTeardown(ctx, cfg.prNumber, github.DeploymentInfo{}); err != nil {
+			logger.Warn("failed to post teardown comment", "error", err)
 		}
 	}
 
