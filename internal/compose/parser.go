@@ -62,3 +62,19 @@ func (p *Project) GetExposedPorts(serviceName string) []uint32 {
 	}
 	return ports
 }
+
+func (p *Project) GetServiceImage(serviceName string) string {
+	service, ok := p.Services[serviceName]
+	if !ok {
+		return ""
+	}
+	return service.Image
+}
+
+func (p *Project) HasBuildConfig(serviceName string) bool {
+	service, ok := p.Services[serviceName]
+	if !ok {
+		return false
+	}
+	return service.Build != nil
+}
