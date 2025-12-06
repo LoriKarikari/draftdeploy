@@ -15,14 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy Preview
-        uses: ./
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          azure-location: eastus
-          compose-file: testdata/docker-compose.yml
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build -o draftdeploy ./cmd/draftdeploy
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Preview
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_LOCATION: eastus
+          COMPOSE_FILE: testdata/docker-compose.yml
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./draftdeploy
