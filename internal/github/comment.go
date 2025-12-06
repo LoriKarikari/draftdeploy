@@ -20,6 +20,7 @@ type DeploymentInfo struct {
 	FQDN       string
 	Services   []ServiceInfo
 	DeployTime time.Duration
+	CommitSHA  string
 }
 
 type ServiceInfo struct {
@@ -44,22 +45,14 @@ func (c *Commenter) getClient(ctx context.Context) *github.Client {
 }
 
 func (c *Commenter) PostDeployment(ctx context.Context, prNumber int, info DeploymentInfo) error {
-	body := formatDeploymentComment(info)
-	return c.postComment(ctx, prNumber, body)
-}
-
-func (c *Commenter) PostTeardown(ctx context.Context, prNumber int, info DeploymentInfo) error {
-	body := formatTeardownComment(info)
-	return c.postComment(ctx, prNumber, body)
-}
-
-func (c *Commenter) postComment(ctx context.Context, prNumber int, body string) error {
 	client := c.getClient(ctx)
 
-	existingID, err := c.findExistingComment(ctx, client, prNumber)
+	existingID, _, err := c.findExistingComment(ctx, client, prNumber)
 	if err != nil {
 		return fmt.Errorf("failed to find existing comment: %w", err)
 	}
+
+	body := formatDeploymentComment(info)
 
 	if existingID != 0 {
 		_, _, err = client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
@@ -81,63 +74,95 @@ func (c *Commenter) postComment(ctx context.Context, prNumber int, body string) 
 	return nil
 }
 
-func (c *Commenter) findExistingComment(ctx context.Context, client *github.Client, prNumber int) (int64, error) {
+func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
+	client := c.getClient(ctx)
+
+	existingID, _, err := c.findExistingComment(ctx, client, prNumber)
+	if err != nil {
+		return fmt.Errorf("failed to find existing comment: %w", err)
+	}
+
+	body := formatTeardown()
+
+	if existingID != 0 {
+		_, _, err = client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
+			Body: github.String(body),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to update comment: %w", err)
+		}
+		return nil
+	}
+
+	_, _, err = client.Issues.CreateComment(ctx, c.owner, c.repo, prNumber, &github.IssueComment{
+		Body: github.String(body),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create comment: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Commenter) findExistingComment(ctx context.Context, client *github.Client, prNumber int) (int64, string, error) {
 	comments, _, err := client.Issues.ListComments(ctx, c.owner, c.repo, prNumber, nil)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	for _, comment := range comments {
 		if comment.Body != nil && strings.Contains(*comment.Body, commentMarker) {
 			if comment.ID != nil {
-				return *comment.ID, nil
+				return *comment.ID, *comment.Body, nil
 			}
 		}
 	}
 
-	return 0, nil
+	return 0, "", nil
 }
 
 func formatDeploymentComment(info DeploymentInfo) string {
 	var sb strings.Builder
-	sb.Grow(512)
+	sb.Grow(1024)
 
-	sb.WriteString(commentMarker)
-	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	fmt.Fprintf(&sb, "**URL:** http://%s\n\n", info.FQDN)
-
-	if len(info.Services) > 0 {
-		sb.WriteString("**Services:**\n")
-		for _, svc := range info.Services {
-			fmt.Fprintf(&sb, "- `%s` (ports: %s)\n", svc.Name, formatPorts(svc.Ports))
-		}
-		sb.WriteString("\n")
+	shortSHA := info.CommitSHA
+	if len(shortSHA) > 7 {
+		shortSHA = shortSHA[:7]
 	}
 
-	fmt.Fprintf(&sb, "**Deploy time:** %s\n", info.DeployTime.Round(time.Second))
+	sb.WriteString(commentMarker)
+	sb.WriteString("\n| Name | Status | Preview | Updated |\n")
+	sb.WriteString("|------|--------|---------|--------|\n")
+	fmt.Fprintf(&sb, "| **%s** | ✅ Ready | [Visit](http://%s) | %s |\n", shortSHA, info.FQDN, formatDuration(info.DeployTime))
+
+	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
 }
 
-func formatTeardownComment(info DeploymentInfo) string {
+func formatDuration(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds ago", s)
+	}
+	m := s / 60
+	if m < 60 {
+		return fmt.Sprintf("%dm ago", m)
+	}
+	h := m / 60
+	return fmt.Sprintf("%dh ago", h)
+}
+
+func formatTeardown() string {
 	var sb strings.Builder
 	sb.Grow(512)
 
 	sb.WriteString(commentMarker)
-	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	fmt.Fprintf(&sb, "~~**URL:** http://%s~~\n\n", info.FQDN)
+	sb.WriteString("\n| Name | Status | Preview | Updated |\n")
+	sb.WriteString("|------|--------|---------|--------|\n")
+	sb.WriteString("| - | ⏹️ Removed | - | just now |\n")
 
-	if len(info.Services) > 0 {
-		sb.WriteString("**Services:**\n")
-		for _, svc := range info.Services {
-			fmt.Fprintf(&sb, "- `%s` (ports: %s)\n", svc.Name, formatPorts(svc.Ports))
-		}
-		sb.WriteString("\n")
-	}
-
-	fmt.Fprintf(&sb, "**Deploy time:** %s\n\n", info.DeployTime.Round(time.Second))
-	sb.WriteString("---\n")
-	sb.WriteString("**Status:** Preview environment has been torn down.\n")
+	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
 }

@@ -76,3 +76,18 @@ func (p *Project) GetServiceImage(serviceName string) string {
 	}
 	return service.Image
 }
+
+func (p *Project) GetEnvironment(serviceName string) map[string]string {
+	service, ok := p.Services[serviceName]
+	if !ok {
+		return nil
+	}
+
+	env := make(map[string]string)
+	for k, v := range service.Environment {
+		if v != nil {
+			env[k] = *v
+		}
+	}
+	return env
+}
