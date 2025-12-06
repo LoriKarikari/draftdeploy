@@ -218,13 +218,15 @@ func parseComposeServices(project *compose.Project) ([]azure.ContainerConfig, []
 		}
 
 		ports := project.GetExposedPorts(name)
+		env := project.GetEnvironment(name)
 
 		containers = append(containers, azure.ContainerConfig{
-			Name:     name,
-			Image:    image,
-			Ports:    ports,
-			CPU:      defaultCPU,
-			MemoryGB: defaultMemoryGB,
+			Name:        name,
+			Image:       image,
+			Ports:       ports,
+			Environment: env,
+			CPU:         defaultCPU,
+			MemoryGB:    defaultMemoryGB,
 		})
 
 		services = append(services, github.ServiceInfo{
