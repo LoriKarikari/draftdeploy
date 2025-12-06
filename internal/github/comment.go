@@ -133,16 +133,18 @@ func formatDeploymentComment(info DeploymentInfo) string {
 	sb.WriteString("|------|------|\n")
 	fmt.Fprintf(&sb, "| **Preview** | [Visit Preview](http://%s) |\n\n", info.FQDN)
 
+	sb.WriteString("**Services:**\n\n")
+	sb.WriteString("| Service | Ports |\n|---------|-------|\n")
 	if len(info.Services) > 0 {
-		sb.WriteString("<details><summary><b>Services</b></summary>\n\n")
-		sb.WriteString("| Service | Ports |\n|---------|-------|\n")
 		for _, svc := range info.Services {
 			fmt.Fprintf(&sb, "| %s | %s |\n", svc.Name, formatPorts(svc.Ports))
 		}
-		sb.WriteString("\n</details>\n\n")
+	} else {
+		sb.WriteString("| - | - |\n")
 	}
+	sb.WriteString("\n")
 
-	fmt.Fprintf(&sb, "---\n*Deployed in %s by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n", info.DeployTime.Round(time.Second))
+	fmt.Fprintf(&sb, "---\n*Deployed in %.0fs by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n", info.DeployTime.Seconds())
 
 	return sb.String()
 }

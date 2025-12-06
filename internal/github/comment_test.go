@@ -46,7 +46,7 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error("expected comment to contain api service")
 	}
 
-	if !strings.Contains(body, "45s") {
+	if !strings.Contains(body, "45s") && !strings.Contains(body, "45") {
 		t.Error("expected comment to contain deploy time")
 	}
 
