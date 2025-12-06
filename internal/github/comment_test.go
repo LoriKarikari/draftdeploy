@@ -41,18 +41,20 @@ func TestFormatDeploymentComment(t *testing.T) {
 	}
 }
 
-func TestFormatTeardownComment(t *testing.T) {
+func TestFormatTeardownFromExisting(t *testing.T) {
 	t.Parallel()
 
-	info := DeploymentInfo{
-		FQDN: "myapp-pr123.eastus.azurecontainer.io",
-		Services: []ServiceInfo{
-			{Name: "frontend", Ports: []int32{80}},
-		},
-		DeployTime: 45 * time.Second,
-	}
+	existing := `<!-- draftdeploy -->
+## DraftDeploy Preview
 
-	body := formatTeardownComment(info)
+**URL:** http://myapp-pr123.eastus.azurecontainer.io
+
+**Services:**
+- ` + "`frontend`" + ` (ports: 80)
+
+**Deploy time:** 45s`
+
+	body := formatTeardownFromExisting(existing)
 
 	if !strings.Contains(body, commentMarker) {
 		t.Error("expected comment to contain marker")
@@ -68,6 +70,24 @@ func TestFormatTeardownComment(t *testing.T) {
 
 	if !strings.Contains(body, "`frontend`") {
 		t.Error("expected comment to preserve service info")
+	}
+
+	if !strings.Contains(body, "myapp-pr123.eastus.azurecontainer.io") {
+		t.Error("expected comment to preserve URL")
+	}
+}
+
+func TestFormatTeardownFromExisting_Empty(t *testing.T) {
+	t.Parallel()
+
+	body := formatTeardownFromExisting("")
+
+	if !strings.Contains(body, commentMarker) {
+		t.Error("expected comment to contain marker")
+	}
+
+	if !strings.Contains(body, "torn down") {
+		t.Error("expected comment to mention teardown")
 	}
 }
 

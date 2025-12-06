@@ -331,7 +331,7 @@ func teardown(ctx context.Context, cfg teardownConfig) error {
 
 	if cfg.githubToken != "" {
 		commenter := github.NewCommenter(cfg.githubToken, cfg.owner, cfg.repo)
-		if err := commenter.PostTeardown(ctx, cfg.prNumber, github.DeploymentInfo{}); err != nil {
+		if err := commenter.PostTeardown(ctx, cfg.prNumber); err != nil {
 			slog.Warn("failed to post teardown comment", "error", err)
 		}
 	}
