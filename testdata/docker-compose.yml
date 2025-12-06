@@ -5,8 +5,6 @@ services:
       - "80:80"
 
   api:
-    image: ealen/echo-server:latest
+    image: mcr.microsoft.com/dotnet/samples:aspnetapp
     ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
+      - "8080:8080"
