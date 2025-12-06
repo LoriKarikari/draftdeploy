@@ -9,7 +9,6 @@ import (
 const (
 	errMarker   = "expected comment to contain marker"
 	errTeardown = "expected comment to mention teardown"
-	svcFrontend = "`frontend`"
 )
 
 func TestFormatDeploymentComment(t *testing.T) {
@@ -22,9 +21,10 @@ func TestFormatDeploymentComment(t *testing.T) {
 			{Name: "api", Ports: []int32{3000, 3001}},
 		},
 		DeployTime: 45 * time.Second,
+		CommitSHA:  "abc1234567890",
 	}
 
-	body := formatDeploymentComment(info)
+	body := formatDeploymentComment(info, "")
 
 	if !strings.Contains(body, commentMarker) {
 		t.Error(errMarker)
@@ -46,12 +46,55 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error("expected comment to contain api service")
 	}
 
-	if !strings.Contains(body, "45s") && !strings.Contains(body, "45") {
+	if !strings.Contains(body, "45") {
 		t.Error("expected comment to contain deploy time")
 	}
 
 	if !strings.Contains(body, "DraftDeploy") {
 		t.Error("expected comment to contain branding")
+	}
+
+	if !strings.Contains(body, "abc1234") {
+		t.Error("expected comment to contain commit SHA")
+	}
+
+	if !strings.Contains(body, "Deployment History") {
+		t.Error("expected comment to contain deployment history")
+	}
+}
+
+func TestFormatDeploymentCommentWithHistory(t *testing.T) {
+	t.Parallel()
+
+	existing := `<!-- draftdeploy -->
+### ✅ Preview Ready
+
+| Name | Link |
+|------|------|
+| **Preview** | [Visit Preview](http://test.io) |
+
+<details><summary><b>Deployment History</b></summary>
+
+| Commit | Status | Time |
+|--------|--------|------|
+| ` + "`abc1234`" + ` | ✅ Ready | 30s |
+
+</details>`
+
+	info := DeploymentInfo{
+		FQDN:       "test.io",
+		DeployTime: 45 * time.Second,
+		CommitSHA:  "def5678",
+	}
+
+	body := formatDeploymentComment(info, existing)
+
+	if !strings.Contains(body, "def5678") {
+		t.Error("expected new commit in history")
+	}
+
+	if !strings.Contains(body, "abc1234") {
+		t.Error("expected old commit preserved in history")
 	}
 }
 

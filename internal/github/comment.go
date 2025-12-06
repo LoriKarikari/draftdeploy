@@ -20,6 +20,7 @@ type DeploymentInfo struct {
 	FQDN       string
 	Services   []ServiceInfo
 	DeployTime time.Duration
+	CommitSHA  string
 }
 
 type ServiceInfo struct {
@@ -44,11 +45,6 @@ func (c *Commenter) getClient(ctx context.Context) *github.Client {
 }
 
 func (c *Commenter) PostDeployment(ctx context.Context, prNumber int, info DeploymentInfo) error {
-	body := formatDeploymentComment(info)
-	return c.postComment(ctx, prNumber, body)
-}
-
-func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
 	client := c.getClient(ctx)
 
 	existingID, existingBody, err := c.findExistingComment(ctx, client, prNumber)
@@ -56,7 +52,7 @@ func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
 		return fmt.Errorf("failed to find existing comment: %w", err)
 	}
 
-	body := formatTeardownFromExisting(existingBody)
+	body := formatDeploymentComment(info, existingBody)
 
 	if existingID != 0 {
 		_, _, err = client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
@@ -78,13 +74,15 @@ func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
 	return nil
 }
 
-func (c *Commenter) postComment(ctx context.Context, prNumber int, body string) error {
+func (c *Commenter) PostTeardown(ctx context.Context, prNumber int) error {
 	client := c.getClient(ctx)
 
-	existingID, _, err := c.findExistingComment(ctx, client, prNumber)
+	existingID, existingBody, err := c.findExistingComment(ctx, client, prNumber)
 	if err != nil {
 		return fmt.Errorf("failed to find existing comment: %w", err)
 	}
+
+	body := formatTeardownFromExisting(existingBody)
 
 	if existingID != 0 {
 		_, _, err = client.Issues.EditComment(ctx, c.owner, c.repo, existingID, &github.IssueComment{
@@ -123,9 +121,9 @@ func (c *Commenter) findExistingComment(ctx context.Context, client *github.Clie
 	return 0, "", nil
 }
 
-func formatDeploymentComment(info DeploymentInfo) string {
+func formatDeploymentComment(info DeploymentInfo, existingBody string) string {
 	var sb strings.Builder
-	sb.Grow(512)
+	sb.Grow(1024)
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n### ✅ Preview Ready\n\n")
@@ -144,9 +142,55 @@ func formatDeploymentComment(info DeploymentInfo) string {
 	}
 	sb.WriteString("\n")
 
-	fmt.Fprintf(&sb, "---\n*Deployed in %.0fs by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n", info.DeployTime.Seconds())
+	sb.WriteString("<details><summary><b>Deployment History</b></summary>\n\n")
+	sb.WriteString("| Commit | Status | Time |\n|--------|--------|------|\n")
+
+	shortSHA := info.CommitSHA
+	if len(shortSHA) > 7 {
+		shortSHA = shortSHA[:7]
+	}
+	fmt.Fprintf(&sb, "| `%s` | ✅ Ready | %.0fs |\n", shortSHA, info.DeployTime.Seconds())
+
+	history := extractDeployHistory(existingBody)
+	for _, h := range history {
+		sb.WriteString(h)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n</details>\n\n")
+
+	sb.WriteString("---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
+}
+
+func extractDeployHistory(body string) []string {
+	if body == "" {
+		return nil
+	}
+
+	var history []string
+	lines := strings.Split(body, "\n")
+	inHistory := false
+
+	for _, line := range lines {
+		if strings.Contains(line, "Deployment History") {
+			inHistory = true
+			continue
+		}
+		if inHistory && strings.HasPrefix(line, "| `") {
+			history = append(history, line)
+		}
+		if inHistory && strings.HasPrefix(line, "</details>") {
+			break
+		}
+	}
+
+	if len(history) > 9 {
+		history = history[:9]
+	}
+
+	return history
 }
 
 func formatTeardownFromExisting(existingBody string) string {

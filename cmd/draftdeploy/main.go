@@ -295,6 +295,7 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 			FQDN:       fqdn,
 			Services:   services,
 			DeployTime: deployTime,
+			CommitSHA:  os.Getenv("GITHUB_SHA"),
 		}); err != nil {
 			slog.Warn("failed to post comment", "error", err)
 		}
