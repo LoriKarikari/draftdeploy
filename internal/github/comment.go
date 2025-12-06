@@ -131,22 +131,17 @@ func formatDeploymentComment(info DeploymentInfo, existingBody string) string {
 	}
 
 	sb.WriteString(commentMarker)
-	sb.WriteString("\n### 🚀 DraftDeploy\n\n")
-	sb.WriteString("| Name | Status | Preview | Updated |\n")
+	sb.WriteString("\n| Name | Status | Preview | Updated |\n")
 	sb.WriteString("|------|--------|---------|--------|\n")
-	fmt.Fprintf(&sb, "| **%s** | ✅ Ready | [Visit](http://%s) | %s |\n\n", shortSHA, info.FQDN, formatDuration(info.DeployTime))
+	fmt.Fprintf(&sb, "| **%s** | ✅ Ready | [Visit](http://%s) | %s |\n", shortSHA, info.FQDN, formatDuration(info.DeployTime))
 
 	history := extractDeployHistory(existingBody)
-	if len(history) > 0 {
-		sb.WriteString("<details><summary>Previous deployments</summary>\n\n")
-		sb.WriteString("| Name | Status | Updated |\n")
-		sb.WriteString("|------|--------|--------|\n")
-		for _, h := range history {
-			sb.WriteString(h)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n</details>\n\n")
+	for _, h := range history {
+		sb.WriteString(h)
+		sb.WriteString("\n")
 	}
+
+	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
 }
@@ -219,22 +214,17 @@ func formatTeardownFromExisting(existingBody string) string {
 	sb.Grow(512)
 
 	sb.WriteString(commentMarker)
-	sb.WriteString("\n### 🛑 DraftDeploy\n\n")
-	sb.WriteString("| Name | Status | Preview | Updated |\n")
+	sb.WriteString("\n| Name | Status | Preview | Updated |\n")
 	sb.WriteString("|------|--------|---------|--------|\n")
 	sb.WriteString("| - | ⏹️ Removed | - | just now |\n")
 
 	history := extractDeployHistory(existingBody)
-	if len(history) > 0 {
-		sb.WriteString("\n<details><summary>Previous deployments</summary>\n\n")
-		sb.WriteString("| Name | Status | Updated |\n")
-		sb.WriteString("|------|--------|--------|\n")
-		for _, h := range history {
-			sb.WriteString(h)
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n</details>\n")
+	for _, h := range history {
+		sb.WriteString(h)
+		sb.WriteString("\n")
 	}
+
+	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
 }

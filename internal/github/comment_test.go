@@ -48,11 +48,12 @@ func TestFormatDeploymentCommentWithHistory(t *testing.T) {
 	t.Parallel()
 
 	existing := `<!-- draftdeploy -->
-### 🚀 DraftDeploy
-
 | Name | Status | Preview | Updated |
 |------|--------|---------|--------|
-| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |`
+| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |
+
+---
+*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
 
 	info := DeploymentInfo{
 		FQDN:       "test.io",
@@ -66,8 +67,8 @@ func TestFormatDeploymentCommentWithHistory(t *testing.T) {
 		t.Error("expected new commit in history")
 	}
 
-	if !strings.Contains(body, "Previous deployments") {
-		t.Error("expected previous deployments section")
+	if !strings.Contains(body, "Powered by") {
+		t.Error("expected powered by footer")
 	}
 }
 
@@ -75,11 +76,12 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 	t.Parallel()
 
 	existing := `<!-- draftdeploy -->
-### 🚀 DraftDeploy
-
 | Name | Status | Preview | Updated |
 |------|--------|---------|--------|
-| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |`
+| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |
+
+---
+*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
 
 	body := formatTeardownFromExisting(existing)
 
@@ -91,8 +93,8 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 		t.Error("expected comment to show removed status")
 	}
 
-	if !strings.Contains(body, "DraftDeploy") {
-		t.Error("expected comment to contain branding")
+	if !strings.Contains(body, "Powered by") {
+		t.Error("expected powered by footer")
 	}
 }
 
