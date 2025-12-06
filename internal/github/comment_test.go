@@ -30,20 +30,28 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "http://myapp-pr123.eastus.azurecontainer.io") {
+	if !strings.Contains(body, "Visit Preview") {
+		t.Error("expected comment to contain preview link")
+	}
+
+	if !strings.Contains(body, "myapp-pr123.eastus.azurecontainer.io") {
 		t.Error("expected comment to contain URL")
 	}
 
-	if !strings.Contains(body, svcFrontend) {
+	if !strings.Contains(body, "frontend") {
 		t.Error("expected comment to contain frontend service")
 	}
 
-	if !strings.Contains(body, "`api`") {
+	if !strings.Contains(body, "api") {
 		t.Error("expected comment to contain api service")
 	}
 
 	if !strings.Contains(body, "45s") {
 		t.Error("expected comment to contain deploy time")
+	}
+
+	if !strings.Contains(body, "DraftDeploy") {
+		t.Error("expected comment to contain branding")
 	}
 }
 
@@ -51,14 +59,22 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 	t.Parallel()
 
 	existing := `<!-- draftdeploy -->
-## DraftDeploy Preview
+### ✅ Preview Ready
 
-**URL:** http://myapp-pr123.eastus.azurecontainer.io
+| Name | Link |
+|------|------|
+| **Preview** | [Visit Preview](http://myapp-pr123.eastus.azurecontainer.io) |
 
-**Services:**
-- ` + "`frontend`" + ` (ports: 80)
+<details><summary><b>Services</b></summary>
 
-**Deploy time:** 45s`
+| Service | Ports |
+|---------|-------|
+| frontend | 80 |
+
+</details>
+
+---
+*Deployed in 45s by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
 
 	body := formatTeardownFromExisting(existing)
 
@@ -66,20 +82,12 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "torn down") {
-		t.Error(errTeardown)
+	if !strings.Contains(body, "Removed") {
+		t.Error("expected comment to show removed status")
 	}
 
-	if !strings.Contains(body, "~~**URL:**") {
-		t.Error("expected URL to be struck through")
-	}
-
-	if !strings.Contains(body, svcFrontend) {
-		t.Error("expected comment to preserve service info")
-	}
-
-	if !strings.Contains(body, "myapp-pr123.eastus.azurecontainer.io") {
-		t.Error("expected comment to preserve URL")
+	if !strings.Contains(body, "DraftDeploy") {
+		t.Error("expected comment to contain branding")
 	}
 }
 

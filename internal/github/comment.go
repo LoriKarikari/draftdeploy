@@ -128,46 +128,55 @@ func formatDeploymentComment(info DeploymentInfo) string {
 	sb.Grow(512)
 
 	sb.WriteString(commentMarker)
-	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	fmt.Fprintf(&sb, "**URL:** http://%s\n\n", info.FQDN)
+	sb.WriteString("\n### ✅ Preview Ready\n\n")
+	fmt.Fprintf(&sb, "| Name | Link |\n")
+	sb.WriteString("|------|------|\n")
+	fmt.Fprintf(&sb, "| **Preview** | [Visit Preview](http://%s) |\n\n", info.FQDN)
 
 	if len(info.Services) > 0 {
-		sb.WriteString("**Services:**\n")
+		sb.WriteString("<details><summary><b>Services</b></summary>\n\n")
+		sb.WriteString("| Service | Ports |\n|---------|-------|\n")
 		for _, svc := range info.Services {
-			fmt.Fprintf(&sb, "- `%s` (ports: %s)\n", svc.Name, formatPorts(svc.Ports))
+			fmt.Fprintf(&sb, "| %s | %s |\n", svc.Name, formatPorts(svc.Ports))
 		}
-		sb.WriteString("\n")
+		sb.WriteString("\n</details>\n\n")
 	}
 
-	fmt.Fprintf(&sb, "**Deploy time:** %s\n", info.DeployTime.Round(time.Second))
+	fmt.Fprintf(&sb, "---\n*Deployed in %s by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n", info.DeployTime.Round(time.Second))
 
 	return sb.String()
 }
 
 func formatTeardownFromExisting(existingBody string) string {
 	if existingBody == "" {
-		return commentMarker + "\n## DraftDeploy Preview\n\n**Status:** Preview environment has been torn down.\n"
+		return commentMarker + "\n### 🛑 Preview Removed\n\nThe preview environment has been torn down.\n\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n"
 	}
 
 	lines := strings.Split(existingBody, "\n")
 	var sb strings.Builder
 	sb.Grow(len(existingBody) + 100)
 
-	for _, line := range lines {
-		if strings.HasPrefix(line, "**URL:**") && !strings.HasPrefix(line, "~~") {
-			sb.WriteString("~~")
-			sb.WriteString(line)
-			sb.WriteString("~~\n")
-		} else {
-			sb.WriteString(line)
+	for i, line := range lines {
+		if strings.Contains(line, "✅ Preview Ready") {
+			sb.WriteString("### 🛑 Preview Removed\n")
+			continue
+		}
+		if strings.Contains(line, "[Visit Preview]") {
+			sb.WriteString("| **Preview** | ~~Removed~~ |\n")
+			continue
+		}
+		if strings.Contains(line, "Deployed in") {
+			continue
+		}
+		sb.WriteString(line)
+		if i < len(lines)-1 {
 			sb.WriteString("\n")
 		}
 	}
 
-	sb.WriteString("\n---\n")
-	sb.WriteString("**Status:** Preview environment has been torn down.\n")
+	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
-	return strings.TrimRight(sb.String(), "\n") + "\n"
+	return sb.String()
 }
 
 func formatPorts(ports []int32) string {
