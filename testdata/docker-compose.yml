@@ -1,10 +1,18 @@
 services:
-  web:
-    image: mcr.microsoft.com/azuredocs/aci-helloworld:latest
+  wordpress:
+    image: mcr.microsoft.com/mirror/docker/library/wordpress:latest
     ports:
       - "80:80"
+    environment:
+      - WORDPRESS_DB_HOST=localhost:3306
+      - WORDPRESS_DB_USER=wordpress
+      - WORDPRESS_DB_PASSWORD=wordpress
+      - WORDPRESS_DB_NAME=wordpress
 
-  api:
-    image: mcr.microsoft.com/dotnet/samples:aspnetapp
-    ports:
-      - "8080:8080"
+  mysql:
+    image: mcr.microsoft.com/mirror/docker/library/mysql:8.0
+    environment:
+      - MYSQL_DATABASE=wordpress
+      - MYSQL_USER=wordpress
+      - MYSQL_PASSWORD=wordpress
+      - MYSQL_ROOT_PASSWORD=rootpassword
