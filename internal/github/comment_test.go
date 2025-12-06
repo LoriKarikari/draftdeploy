@@ -17,7 +17,7 @@ func TestFormatDeploymentComment(t *testing.T) {
 		CommitSHA:  "abc1234567890",
 	}
 
-	body := formatDeploymentComment(info, "")
+	body := formatDeploymentComment(info)
 
 	if !strings.Contains(body, commentMarker) {
 		t.Error(errMarker)
@@ -44,46 +44,10 @@ func TestFormatDeploymentComment(t *testing.T) {
 	}
 }
 
-func TestFormatDeploymentCommentWithHistory(t *testing.T) {
+func TestFormatTeardown(t *testing.T) {
 	t.Parallel()
 
-	existing := `<!-- draftdeploy -->
-| Name | Status | Preview | Updated |
-|------|--------|---------|--------|
-| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |
-
----
-*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
-
-	info := DeploymentInfo{
-		FQDN:       "test.io",
-		DeployTime: 45 * time.Second,
-		CommitSHA:  "def5678",
-	}
-
-	body := formatDeploymentComment(info, existing)
-
-	if !strings.Contains(body, "def5678") {
-		t.Error("expected new commit in history")
-	}
-
-	if !strings.Contains(body, "Powered by") {
-		t.Error("expected powered by footer")
-	}
-}
-
-func TestFormatTeardownFromExisting(t *testing.T) {
-	t.Parallel()
-
-	existing := `<!-- draftdeploy -->
-| Name | Status | Preview | Updated |
-|------|--------|---------|--------|
-| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |
-
----
-*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
-
-	body := formatTeardownFromExisting(existing)
+	body := formatTeardown()
 
 	if !strings.Contains(body, commentMarker) {
 		t.Error(errMarker)
@@ -95,20 +59,6 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 
 	if !strings.Contains(body, "Powered by") {
 		t.Error("expected powered by footer")
-	}
-}
-
-func TestFormatTeardownFromExistingEmpty(t *testing.T) {
-	t.Parallel()
-
-	body := formatTeardownFromExisting("")
-
-	if !strings.Contains(body, commentMarker) {
-		t.Error(errMarker)
-	}
-
-	if !strings.Contains(body, "Removed") {
-		t.Error("expected comment to show removed status")
 	}
 }
 
