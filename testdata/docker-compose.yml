@@ -1,5 +1,5 @@
 services:
   web:
-    image: nginx:alpine
+    image: mcr.microsoft.com/azuredocs/aci-helloworld:latest
     ports:
       - "80:80"
