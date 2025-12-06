@@ -125,43 +125,43 @@ func formatDeploymentComment(info DeploymentInfo, existingBody string) string {
 	var sb strings.Builder
 	sb.Grow(1024)
 
-	sb.WriteString(commentMarker)
-	sb.WriteString("\n### ✅ Preview Ready\n\n")
-	fmt.Fprintf(&sb, "| Name | Link |\n")
-	sb.WriteString("|------|------|\n")
-	fmt.Fprintf(&sb, "| **Preview** | [Visit Preview](http://%s) |\n\n", info.FQDN)
-
-	sb.WriteString("**Services:**\n\n")
-	sb.WriteString("| Service | Ports |\n|---------|-------|\n")
-	if len(info.Services) > 0 {
-		for _, svc := range info.Services {
-			fmt.Fprintf(&sb, "| %s | %s |\n", svc.Name, formatPorts(svc.Ports))
-		}
-	} else {
-		sb.WriteString("| - | - |\n")
-	}
-	sb.WriteString("\n")
-
-	sb.WriteString("<details><summary><b>Deployment History</b></summary>\n\n")
-	sb.WriteString("| Commit | Status | Time |\n|--------|--------|------|\n")
-
 	shortSHA := info.CommitSHA
 	if len(shortSHA) > 7 {
 		shortSHA = shortSHA[:7]
 	}
-	fmt.Fprintf(&sb, "| `%s` | ✅ Ready | %.0fs |\n", shortSHA, info.DeployTime.Seconds())
+
+	sb.WriteString(commentMarker)
+	sb.WriteString("\n### 🚀 DraftDeploy\n\n")
+	sb.WriteString("| Name | Status | Preview | Updated |\n")
+	sb.WriteString("|------|--------|---------|--------|\n")
+	fmt.Fprintf(&sb, "| **%s** | ✅ Ready | [Visit](http://%s) | %s |\n\n", shortSHA, info.FQDN, formatDuration(info.DeployTime))
 
 	history := extractDeployHistory(existingBody)
-	for _, h := range history {
-		sb.WriteString(h)
-		sb.WriteString("\n")
+	if len(history) > 0 {
+		sb.WriteString("<details><summary>Previous deployments</summary>\n\n")
+		sb.WriteString("| Name | Status | Updated |\n")
+		sb.WriteString("|------|--------|--------|\n")
+		for _, h := range history {
+			sb.WriteString(h)
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n</details>\n\n")
 	}
 
-	sb.WriteString("\n</details>\n\n")
-
-	sb.WriteString("---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
-
 	return sb.String()
+}
+
+func formatDuration(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 60 {
+		return fmt.Sprintf("%ds ago", s)
+	}
+	m := s / 60
+	if m < 60 {
+		return fmt.Sprintf("%dm ago", m)
+	}
+	h := m / 60
+	return fmt.Sprintf("%dh ago", h)
 }
 
 func extractDeployHistory(body string) []string {
@@ -171,20 +171,20 @@ func extractDeployHistory(body string) []string {
 
 	var history []string
 	lines := strings.Split(body, "\n")
-	inHistory := false
 
 	for _, line := range lines {
-		if strings.Contains(line, "Deployment History") {
-			inHistory = true
-			continue
-		}
-		if inHistory && strings.HasPrefix(line, "| `") {
-			history = append(history, line)
-		}
-		if inHistory && strings.HasPrefix(line, "</details>") {
-			break
+		if strings.HasPrefix(line, "| **") && strings.Contains(line, "Ready") {
+			parts := strings.Split(line, "|")
+			if len(parts) >= 4 {
+				name := strings.TrimSpace(parts[1])
+				status := strings.TrimSpace(parts[2])
+				history = append(history, fmt.Sprintf("| %s | %s | - |", name, status))
+			}
 		}
 	}
+
+	existingHistory := extractPreviousHistory(body)
+	history = append(history, existingHistory...)
 
 	if len(history) > 9 {
 		history = history[:9]
@@ -193,34 +193,48 @@ func extractDeployHistory(body string) []string {
 	return history
 }
 
-func formatTeardownFromExisting(existingBody string) string {
-	if existingBody == "" {
-		return commentMarker + "\n### 🛑 Preview Removed\n\nThe preview environment has been torn down.\n\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n"
+func extractPreviousHistory(body string) []string {
+	var history []string
+	lines := strings.Split(body, "\n")
+	inHistory := false
+
+	for _, line := range lines {
+		if strings.Contains(line, "Previous deployments") {
+			inHistory = true
+			continue
+		}
+		if inHistory && strings.HasPrefix(line, "| **") {
+			history = append(history, line)
+		}
+		if inHistory && strings.HasPrefix(line, "</details>") {
+			break
+		}
 	}
 
-	lines := strings.Split(existingBody, "\n")
-	var sb strings.Builder
-	sb.Grow(len(existingBody) + 100)
+	return history
+}
 
-	for i, line := range lines {
-		if strings.Contains(line, "✅ Preview Ready") {
-			sb.WriteString("### 🛑 Preview Removed\n")
-			continue
-		}
-		if strings.Contains(line, "[Visit Preview]") {
-			sb.WriteString("| **Preview** | ~~Removed~~ |\n")
-			continue
-		}
-		if strings.Contains(line, "Deployed in") {
-			continue
-		}
-		sb.WriteString(line)
-		if i < len(lines)-1 {
+func formatTeardownFromExisting(existingBody string) string {
+	var sb strings.Builder
+	sb.Grow(512)
+
+	sb.WriteString(commentMarker)
+	sb.WriteString("\n### 🛑 DraftDeploy\n\n")
+	sb.WriteString("| Name | Status | Preview | Updated |\n")
+	sb.WriteString("|------|--------|---------|--------|\n")
+	sb.WriteString("| - | ⏹️ Removed | - | just now |\n")
+
+	history := extractDeployHistory(existingBody)
+	if len(history) > 0 {
+		sb.WriteString("\n<details><summary>Previous deployments</summary>\n\n")
+		sb.WriteString("| Name | Status | Updated |\n")
+		sb.WriteString("|------|--------|--------|\n")
+		for _, h := range history {
+			sb.WriteString(h)
 			sb.WriteString("\n")
 		}
+		sb.WriteString("\n</details>\n")
 	}
-
-	sb.WriteString("\n---\n*Powered by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*\n")
 
 	return sb.String()
 }

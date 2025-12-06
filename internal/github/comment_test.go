@@ -6,20 +6,13 @@ import (
 	"time"
 )
 
-const (
-	errMarker   = "expected comment to contain marker"
-	errTeardown = "expected comment to mention teardown"
-)
+const errMarker = "expected comment to contain marker"
 
 func TestFormatDeploymentComment(t *testing.T) {
 	t.Parallel()
 
 	info := DeploymentInfo{
-		FQDN: "myapp-pr123.eastus.azurecontainer.io",
-		Services: []ServiceInfo{
-			{Name: "frontend", Ports: []int32{80}},
-			{Name: "api", Ports: []int32{3000, 3001}},
-		},
+		FQDN:       "myapp-pr123.eastus.azurecontainer.io",
 		DeployTime: 45 * time.Second,
 		CommitSHA:  "abc1234567890",
 	}
@@ -30,24 +23,12 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "Visit Preview") {
+	if !strings.Contains(body, "Visit") {
 		t.Error("expected comment to contain preview link")
 	}
 
 	if !strings.Contains(body, "myapp-pr123.eastus.azurecontainer.io") {
 		t.Error("expected comment to contain URL")
-	}
-
-	if !strings.Contains(body, "frontend") {
-		t.Error("expected comment to contain frontend service")
-	}
-
-	if !strings.Contains(body, "api") {
-		t.Error("expected comment to contain api service")
-	}
-
-	if !strings.Contains(body, "45") {
-		t.Error("expected comment to contain deploy time")
 	}
 
 	if !strings.Contains(body, "DraftDeploy") {
@@ -58,8 +39,8 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error("expected comment to contain commit SHA")
 	}
 
-	if !strings.Contains(body, "Deployment History") {
-		t.Error("expected comment to contain deployment history")
+	if !strings.Contains(body, "Ready") {
+		t.Error("expected comment to contain status")
 	}
 }
 
@@ -67,19 +48,11 @@ func TestFormatDeploymentCommentWithHistory(t *testing.T) {
 	t.Parallel()
 
 	existing := `<!-- draftdeploy -->
-### ✅ Preview Ready
+### 🚀 DraftDeploy
 
-| Name | Link |
-|------|------|
-| **Preview** | [Visit Preview](http://test.io) |
-
-<details><summary><b>Deployment History</b></summary>
-
-| Commit | Status | Time |
-|--------|--------|------|
-| ` + "`abc1234`" + ` | ✅ Ready | 30s |
-
-</details>`
+| Name | Status | Preview | Updated |
+|------|--------|---------|--------|
+| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |`
 
 	info := DeploymentInfo{
 		FQDN:       "test.io",
@@ -93,8 +66,8 @@ func TestFormatDeploymentCommentWithHistory(t *testing.T) {
 		t.Error("expected new commit in history")
 	}
 
-	if !strings.Contains(body, "abc1234") {
-		t.Error("expected old commit preserved in history")
+	if !strings.Contains(body, "Previous deployments") {
+		t.Error("expected previous deployments section")
 	}
 }
 
@@ -102,22 +75,11 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 	t.Parallel()
 
 	existing := `<!-- draftdeploy -->
-### ✅ Preview Ready
+### 🚀 DraftDeploy
 
-| Name | Link |
-|------|------|
-| **Preview** | [Visit Preview](http://myapp-pr123.eastus.azurecontainer.io) |
-
-<details><summary><b>Services</b></summary>
-
-| Service | Ports |
-|---------|-------|
-| frontend | 80 |
-
-</details>
-
----
-*Deployed in 45s by [DraftDeploy](https://github.com/LoriKarikari/draftdeploy)*`
+| Name | Status | Preview | Updated |
+|------|--------|---------|--------|
+| **abc1234** | ✅ Ready | [Visit](http://test.io) | 30s ago |`
 
 	body := formatTeardownFromExisting(existing)
 
@@ -143,8 +105,8 @@ func TestFormatTeardownFromExistingEmpty(t *testing.T) {
 		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "torn down") {
-		t.Error(errTeardown)
+	if !strings.Contains(body, "Removed") {
+		t.Error("expected comment to show removed status")
 	}
 }
 
