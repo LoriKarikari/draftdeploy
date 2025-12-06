@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+const (
+	errMarker   = "expected comment to contain marker"
+	errTeardown = "expected comment to mention teardown"
+	svcFrontend = "`frontend`"
+)
+
 func TestFormatDeploymentComment(t *testing.T) {
 	t.Parallel()
 
@@ -21,14 +27,14 @@ func TestFormatDeploymentComment(t *testing.T) {
 	body := formatDeploymentComment(info)
 
 	if !strings.Contains(body, commentMarker) {
-		t.Error("expected comment to contain marker")
+		t.Error(errMarker)
 	}
 
 	if !strings.Contains(body, "http://myapp-pr123.eastus.azurecontainer.io") {
 		t.Error("expected comment to contain URL")
 	}
 
-	if !strings.Contains(body, "`frontend`") {
+	if !strings.Contains(body, svcFrontend) {
 		t.Error("expected comment to contain frontend service")
 	}
 
@@ -57,18 +63,18 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 	body := formatTeardownFromExisting(existing)
 
 	if !strings.Contains(body, commentMarker) {
-		t.Error("expected comment to contain marker")
+		t.Error(errMarker)
 	}
 
 	if !strings.Contains(body, "torn down") {
-		t.Error("expected comment to mention teardown")
+		t.Error(errTeardown)
 	}
 
 	if !strings.Contains(body, "~~**URL:**") {
 		t.Error("expected URL to be struck through")
 	}
 
-	if !strings.Contains(body, "`frontend`") {
+	if !strings.Contains(body, svcFrontend) {
 		t.Error("expected comment to preserve service info")
 	}
 
@@ -77,17 +83,17 @@ func TestFormatTeardownFromExisting(t *testing.T) {
 	}
 }
 
-func TestFormatTeardownFromExisting_Empty(t *testing.T) {
+func TestFormatTeardownFromExistingEmpty(t *testing.T) {
 	t.Parallel()
 
 	body := formatTeardownFromExisting("")
 
 	if !strings.Contains(body, commentMarker) {
-		t.Error("expected comment to contain marker")
+		t.Error(errMarker)
 	}
 
 	if !strings.Contains(body, "torn down") {
-		t.Error("expected comment to mention teardown")
+		t.Error(errTeardown)
 	}
 }
 
