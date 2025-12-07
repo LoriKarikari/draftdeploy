@@ -17,7 +17,7 @@ import (
 const (
 	DefaultCPU      = 0.5
 	DefaultMemoryGB = 0.5
-	maxRetryTime    = 2 * time.Minute
+	maxRetryTime    = 10 * time.Minute // ACA environment creation can take 5+ minutes
 )
 
 type Deployer struct {
