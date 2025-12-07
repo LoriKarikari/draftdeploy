@@ -1,6 +1,6 @@
 # DraftDeploy
 
-Deploy docker-compose stacks to Azure Container Instances for PR previews.
+Deploy docker-compose stacks to Azure for PR previews.
 
 ## Usage
 

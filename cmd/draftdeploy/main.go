@@ -278,7 +278,6 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 		Name:          cfg.containerName,
 		Location:      cfg.location,
 		Containers:    containers,
-		DNSNameLabel:  cfg.dnsLabel,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to deploy: %w", err)
