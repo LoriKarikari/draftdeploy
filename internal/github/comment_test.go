@@ -24,7 +24,7 @@ func TestFormatDeploymentComment(t *testing.T) {
 		t.Error("expected comment to contain marker")
 	}
 
-	if !strings.Contains(body, "http://myapp-pr123.eastus.azurecontainer.io") {
+	if !strings.Contains(body, "https://myapp-pr123.eastus.azurecontainer.io") {
 		t.Error("expected comment to contain URL")
 	}
 

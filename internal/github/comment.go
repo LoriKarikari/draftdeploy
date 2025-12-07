@@ -104,7 +104,7 @@ func formatDeploymentComment(info DeploymentInfo) string {
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	fmt.Fprintf(&sb, "**URL:** http://%s\n\n", info.FQDN)
+	fmt.Fprintf(&sb, "**URL:** https://%s\n\n", info.FQDN)
 
 	if len(info.Services) > 0 {
 		sb.WriteString("**Services:**\n")
@@ -125,7 +125,7 @@ func formatTeardownComment(info DeploymentInfo) string {
 
 	sb.WriteString(commentMarker)
 	sb.WriteString("\n## DraftDeploy Preview\n\n")
-	fmt.Fprintf(&sb, "~~**URL:** http://%s~~\n\n", info.FQDN)
+	fmt.Fprintf(&sb, "~~**URL:** https://%s~~\n\n", info.FQDN)
 
 	if len(info.Services) > 0 {
 		sb.WriteString("**Services:**\n")

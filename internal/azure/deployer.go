@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/cenkalti/backoff/v4"
 )
@@ -21,17 +21,18 @@ const (
 )
 
 type Deployer struct {
-	containerClient *armcontainerinstance.ContainerGroupsClient
-	rgClient        *armresources.ResourceGroupsClient
-	subscriptionID  string
+	envClient      *armappcontainers.ManagedEnvironmentsClient
+	appClient      *armappcontainers.ContainerAppsClient
+	rgClient       *armresources.ResourceGroupsClient
+	subscriptionID string
 }
 
 type DeployConfig struct {
-	ResourceGroup string
-	Name          string
-	Location      string
-	Containers    []ContainerConfig
-	DNSNameLabel  string
+	ResourceGroup   string
+	Name            string
+	EnvironmentName string
+	Location        string
+	Containers      []ContainerConfig
 }
 
 type ContainerConfig struct {
@@ -44,9 +45,14 @@ type ContainerConfig struct {
 }
 
 func NewDeployer(credential azcore.TokenCredential, subscriptionID string) (*Deployer, error) {
-	containerClient, err := armcontainerinstance.NewContainerGroupsClient(subscriptionID, credential, nil)
+	envClient, err := armappcontainers.NewManagedEnvironmentsClient(subscriptionID, credential, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create container groups client: %w", err)
+		return nil, fmt.Errorf("failed to create managed environments client: %w", err)
+	}
+
+	appClient, err := armappcontainers.NewContainerAppsClient(subscriptionID, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container apps client: %w", err)
 	}
 
 	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, credential, nil)
@@ -55,9 +61,10 @@ func NewDeployer(credential azcore.TokenCredential, subscriptionID string) (*Dep
 	}
 
 	return &Deployer{
-		containerClient: containerClient,
-		rgClient:        rgClient,
-		subscriptionID:  subscriptionID,
+		envClient:      envClient,
+		appClient:      appClient,
+		rgClient:       rgClient,
+		subscriptionID: subscriptionID,
 	}, nil
 }
 
@@ -81,27 +88,74 @@ func (d *Deployer) ensureResourceGroup(ctx context.Context, name, location strin
 	return nil
 }
 
+func (d *Deployer) ensureEnvironment(ctx context.Context, resourceGroup, name, location string) (string, error) {
+	var envID string
+
+	operation := func() error {
+		env := armappcontainers.ManagedEnvironment{
+			Location: to.Ptr(location),
+			Properties: &armappcontainers.ManagedEnvironmentProperties{
+				ZoneRedundant: to.Ptr(false),
+			},
+		}
+
+		poller, err := d.envClient.BeginCreateOrUpdate(ctx, resourceGroup, name, env, nil)
+		if err != nil {
+			if isPermanentError(err) {
+				return backoff.Permanent(err)
+			}
+			return fmt.Errorf("failed to create environment: %w", err)
+		}
+
+		result, err := poller.PollUntilDone(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("failed to wait for environment: %w", err)
+		}
+
+		if result.ID == nil {
+			return fmt.Errorf("environment has no ID")
+		}
+		envID = *result.ID
+		return nil
+	}
+
+	if err := retryWithBackoff(ctx, operation); err != nil {
+		return "", err
+	}
+	return envID, nil
+}
+
 func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, error) {
 	if err := d.ensureResourceGroup(ctx, config.ResourceGroup, config.Location); err != nil {
 		return "", err
 	}
 
-	containerGroup := buildContainerGroup(config)
+	envName := config.EnvironmentName
+	if envName == "" {
+		envName = config.Name + "-env"
+	}
 
-	var result armcontainerinstance.ContainerGroupsClientCreateOrUpdateResponse
+	envID, err := d.ensureEnvironment(ctx, config.ResourceGroup, envName, config.Location)
+	if err != nil {
+		return "", err
+	}
+
+	containerApp := buildContainerApp(config, envID)
+
+	var result armappcontainers.ContainerAppsClientCreateOrUpdateResponse
 
 	operation := func() error {
-		poller, err := d.containerClient.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerGroup, nil)
+		poller, err := d.appClient.BeginCreateOrUpdate(ctx, config.ResourceGroup, config.Name, containerApp, nil)
 		if err != nil {
 			if isPermanentError(err) {
 				return backoff.Permanent(err)
 			}
-			return fmt.Errorf("failed to create container group: %w", err)
+			return fmt.Errorf("failed to create container app: %w", err)
 		}
 
 		res, err := poller.PollUntilDone(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("failed to wait for container group: %w", err)
+			return fmt.Errorf("failed to wait for container app: %w", err)
 		}
 		result = res
 		return nil
@@ -114,23 +168,19 @@ func (d *Deployer) Deploy(ctx context.Context, config DeployConfig) (string, err
 	return extractFQDN(result)
 }
 
-func buildContainerGroup(config DeployConfig) armcontainerinstance.ContainerGroup {
-	containers := make([]*armcontainerinstance.Container, 0, len(config.Containers))
-	exposedPorts := make([]*armcontainerinstance.Port, 0)
+func buildContainerApp(config DeployConfig, envID string) armappcontainers.ContainerApp {
+	containers := make([]*armappcontainers.Container, 0, len(config.Containers))
+
+	// Find the first exposed port for ingress
+	var ingressPort int32 = 80
+	for _, c := range config.Containers {
+		if len(c.Ports) > 0 {
+			ingressPort = c.Ports[0]
+			break
+		}
+	}
 
 	for _, c := range config.Containers {
-		ports := make([]*armcontainerinstance.ContainerPort, 0, len(c.Ports))
-		for _, p := range c.Ports {
-			ports = append(ports, &armcontainerinstance.ContainerPort{
-				Port:     to.Ptr(p),
-				Protocol: to.Ptr(armcontainerinstance.ContainerNetworkProtocolTCP),
-			})
-			exposedPorts = append(exposedPorts, &armcontainerinstance.Port{
-				Port:     to.Ptr(p),
-				Protocol: to.Ptr(armcontainerinstance.ContainerGroupNetworkProtocolTCP),
-			})
-		}
-
 		envVars := buildEnvVars(c.Environment)
 
 		cpu := c.CPU
@@ -142,38 +192,40 @@ func buildContainerGroup(config DeployConfig) armcontainerinstance.ContainerGrou
 			mem = DefaultMemoryGB
 		}
 
-		containers = append(containers, &armcontainerinstance.Container{
-			Name: to.Ptr(c.Name),
-			Properties: &armcontainerinstance.ContainerProperties{
-				Image:                to.Ptr(c.Image),
-				Ports:                ports,
-				EnvironmentVariables: envVars,
-				Resources: &armcontainerinstance.ResourceRequirements{
-					Requests: &armcontainerinstance.ResourceRequests{
-						CPU:        to.Ptr(cpu),
-						MemoryInGB: to.Ptr(mem),
-					},
-				},
+		containers = append(containers, &armappcontainers.Container{
+			Name:  to.Ptr(c.Name),
+			Image: to.Ptr(c.Image),
+			Env:   envVars,
+			Resources: &armappcontainers.ContainerResources{
+				CPU:    to.Ptr(cpu),
+				Memory: to.Ptr(fmt.Sprintf("%.1fGi", mem)),
 			},
 		})
 	}
 
-	return armcontainerinstance.ContainerGroup{
+	return armappcontainers.ContainerApp{
 		Location: to.Ptr(config.Location),
-		Properties: &armcontainerinstance.ContainerGroupPropertiesProperties{
-			Containers:    containers,
-			OSType:        to.Ptr(armcontainerinstance.OperatingSystemTypesLinux),
-			RestartPolicy: to.Ptr(armcontainerinstance.ContainerGroupRestartPolicyAlways),
-			IPAddress: &armcontainerinstance.IPAddress{
-				Type:         to.Ptr(armcontainerinstance.ContainerGroupIPAddressTypePublic),
-				Ports:        exposedPorts,
-				DNSNameLabel: to.Ptr(config.DNSNameLabel),
+		Properties: &armappcontainers.ContainerAppProperties{
+			ManagedEnvironmentID: to.Ptr(envID),
+			Configuration: &armappcontainers.Configuration{
+				Ingress: &armappcontainers.Ingress{
+					External:   to.Ptr(true),
+					TargetPort: to.Ptr(ingressPort),
+					Transport:  to.Ptr(armappcontainers.IngressTransportMethodAuto),
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: containers,
+				Scale: &armappcontainers.Scale{
+					MinReplicas: to.Ptr[int32](0),
+					MaxReplicas: to.Ptr[int32](1),
+				},
 			},
 		},
 	}
 }
 
-func buildEnvVars(env map[string]string) []*armcontainerinstance.EnvironmentVariable {
+func buildEnvVars(env map[string]string) []*armappcontainers.EnvironmentVar {
 	if len(env) == 0 {
 		return nil
 	}
@@ -184,9 +236,9 @@ func buildEnvVars(env map[string]string) []*armcontainerinstance.EnvironmentVari
 	}
 	sort.Strings(keys)
 
-	envVars := make([]*armcontainerinstance.EnvironmentVariable, 0, len(env))
+	envVars := make([]*armappcontainers.EnvironmentVar, 0, len(env))
 	for _, k := range keys {
-		envVars = append(envVars, &armcontainerinstance.EnvironmentVariable{
+		envVars = append(envVars, &armappcontainers.EnvironmentVar{
 			Name:  to.Ptr(k),
 			Value: to.Ptr(env[k]),
 		})
@@ -194,32 +246,35 @@ func buildEnvVars(env map[string]string) []*armcontainerinstance.EnvironmentVari
 	return envVars
 }
 
-func extractFQDN(result armcontainerinstance.ContainerGroupsClientCreateOrUpdateResponse) (string, error) {
+func extractFQDN(result armappcontainers.ContainerAppsClientCreateOrUpdateResponse) (string, error) {
 	if result.Properties == nil {
-		return "", fmt.Errorf("container group has no properties")
+		return "", fmt.Errorf("container app has no properties")
 	}
-	if result.Properties.IPAddress == nil {
-		return "", fmt.Errorf("container group has no IP address")
+	if result.Properties.Configuration == nil {
+		return "", fmt.Errorf("container app has no configuration")
 	}
-	if result.Properties.IPAddress.Fqdn == nil {
-		return "", fmt.Errorf("container group has no FQDN")
+	if result.Properties.Configuration.Ingress == nil {
+		return "", fmt.Errorf("container app has no ingress")
 	}
-	return *result.Properties.IPAddress.Fqdn, nil
+	if result.Properties.Configuration.Ingress.Fqdn == nil {
+		return "", fmt.Errorf("container app has no FQDN")
+	}
+	return *result.Properties.Configuration.Ingress.Fqdn, nil
 }
 
 func (d *Deployer) Delete(ctx context.Context, resourceGroup, name string) error {
 	operation := func() error {
-		poller, err := d.containerClient.BeginDelete(ctx, resourceGroup, name, nil)
+		poller, err := d.appClient.BeginDelete(ctx, resourceGroup, name, nil)
 		if err != nil {
 			if isPermanentError(err) {
 				return backoff.Permanent(err)
 			}
-			return fmt.Errorf("failed to delete container group: %w", err)
+			return fmt.Errorf("failed to delete container app: %w", err)
 		}
 
 		_, err = poller.PollUntilDone(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("failed to wait for container group deletion: %w", err)
+			return fmt.Errorf("failed to wait for container app deletion: %w", err)
 		}
 		return nil
 	}
