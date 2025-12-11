@@ -7,6 +7,12 @@ branding:
   color: 'blue'
 
 inputs:
+  azure-client-id:
+    description: 'Azure service principal client ID'
+    required: true
+  azure-tenant-id:
+    description: 'Azure AD tenant ID'
+    required: true
   azure-subscription-id:
     description: 'Azure subscription ID'
     required: true
@@ -25,14 +31,34 @@ inputs:
 outputs:
   url:
     description: 'URL of the deployed preview environment'
+    value: ${{ steps.deploy.outputs.url }}
   resource-group:
     description: 'Name of the created Azure resource group'
+    value: ${{ steps.deploy.outputs.resource-group }}
 
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  env:
-    AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
-    AZURE_LOCATION: ${{ inputs.azure-location }}
-    COMPOSE_FILE: ${{ inputs.compose-file }}
-    GITHUB_TOKEN: ${{ inputs.github-token }}
+  using: 'composite'
+  steps:
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.azure-client-id }}
+        tenant-id: ${{ inputs.azure-tenant-id }}
+        subscription-id: ${{ inputs.azure-subscription-id }}
+
+    - name: Download draftdeploy
+      shell: bash
+      run: |
+        VERSION=$(curl -fsSL https://api.github.com/repos/LoriKarikari/draftdeploy/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+        curl -fsSL "https://github.com/LoriKarikari/draftdeploy/releases/download/v${VERSION}/draftdeploy_${VERSION}_linux_amd64.tar.gz" | tar xz
+        chmod +x draftdeploy
+
+    - name: Deploy
+      id: deploy
+      shell: bash
+      env:
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.azure-subscription-id }}
+        AZURE_LOCATION: ${{ inputs.azure-location }}
+        COMPOSE_FILE: ${{ inputs.compose-file }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: ./draftdeploy

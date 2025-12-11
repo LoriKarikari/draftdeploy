@@ -218,13 +218,15 @@ func parseComposeServices(project *compose.Project) ([]azure.ContainerConfig, []
 		}
 
 		ports := project.GetExposedPorts(name)
+		env := project.GetEnvironment(name)
 
 		containers = append(containers, azure.ContainerConfig{
-			Name:     name,
-			Image:    image,
-			Ports:    ports,
-			CPU:      defaultCPU,
-			MemoryGB: defaultMemoryGB,
+			Name:        name,
+			Image:       image,
+			Ports:       ports,
+			Environment: env,
+			CPU:         defaultCPU,
+			MemoryGB:    defaultMemoryGB,
 		})
 
 		services = append(services, github.ServiceInfo{
@@ -295,6 +297,7 @@ func deploy(ctx context.Context, cfg deployConfig) error {
 			FQDN:       fqdn,
 			Services:   services,
 			DeployTime: deployTime,
+			CommitSHA:  os.Getenv("GITHUB_SHA"),
 		}); err != nil {
 			slog.Warn("failed to post comment", "error", err)
 		}
@@ -331,7 +334,7 @@ func teardown(ctx context.Context, cfg teardownConfig) error {
 
 	if cfg.githubToken != "" {
 		commenter := github.NewCommenter(cfg.githubToken, cfg.owner, cfg.repo)
-		if err := commenter.PostTeardown(ctx, cfg.prNumber, github.DeploymentInfo{}); err != nil {
+		if err := commenter.PostTeardown(ctx, cfg.prNumber); err != nil {
 			slog.Warn("failed to post teardown comment", "error", err)
 		}
 	}

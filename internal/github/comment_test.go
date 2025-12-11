@@ -6,68 +6,59 @@ import (
 	"time"
 )
 
+const errMarker = "expected comment to contain marker"
+
 func TestFormatDeploymentComment(t *testing.T) {
 	t.Parallel()
 
 	info := DeploymentInfo{
-		FQDN: "myapp-pr123.eastus.azurecontainer.io",
-		Services: []ServiceInfo{
-			{Name: "frontend", Ports: []int32{80}},
-			{Name: "api", Ports: []int32{3000, 3001}},
-		},
+		FQDN:       "myapp-pr123.eastus.azurecontainer.io",
 		DeployTime: 45 * time.Second,
+		CommitSHA:  "abc1234567890",
 	}
 
 	body := formatDeploymentComment(info)
 
 	if !strings.Contains(body, commentMarker) {
-		t.Error("expected comment to contain marker")
+		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "http://myapp-pr123.eastus.azurecontainer.io") {
+	if !strings.Contains(body, "Visit") {
+		t.Error("expected comment to contain preview link")
+	}
+
+	if !strings.Contains(body, "myapp-pr123.eastus.azurecontainer.io") {
 		t.Error("expected comment to contain URL")
 	}
 
-	if !strings.Contains(body, "`frontend`") {
-		t.Error("expected comment to contain frontend service")
+	if !strings.Contains(body, "DraftDeploy") {
+		t.Error("expected comment to contain branding")
 	}
 
-	if !strings.Contains(body, "`api`") {
-		t.Error("expected comment to contain api service")
+	if !strings.Contains(body, "abc1234") {
+		t.Error("expected comment to contain commit SHA")
 	}
 
-	if !strings.Contains(body, "45s") {
-		t.Error("expected comment to contain deploy time")
+	if !strings.Contains(body, "Ready") {
+		t.Error("expected comment to contain status")
 	}
 }
 
-func TestFormatTeardownComment(t *testing.T) {
+func TestFormatTeardown(t *testing.T) {
 	t.Parallel()
 
-	info := DeploymentInfo{
-		FQDN: "myapp-pr123.eastus.azurecontainer.io",
-		Services: []ServiceInfo{
-			{Name: "frontend", Ports: []int32{80}},
-		},
-		DeployTime: 45 * time.Second,
-	}
-
-	body := formatTeardownComment(info)
+	body := formatTeardown()
 
 	if !strings.Contains(body, commentMarker) {
-		t.Error("expected comment to contain marker")
+		t.Error(errMarker)
 	}
 
-	if !strings.Contains(body, "torn down") {
-		t.Error("expected comment to mention teardown")
+	if !strings.Contains(body, "Removed") {
+		t.Error("expected comment to show removed status")
 	}
 
-	if !strings.Contains(body, "~~**URL:**") {
-		t.Error("expected URL to be struck through")
-	}
-
-	if !strings.Contains(body, "`frontend`") {
-		t.Error("expected comment to preserve service info")
+	if !strings.Contains(body, "Powered by") {
+		t.Error("expected powered by footer")
 	}
 }
 
