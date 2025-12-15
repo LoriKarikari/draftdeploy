@@ -10,7 +10,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/compose-spec/compose-go/v2 v2.10.0
 	github.com/google/go-github/v57 v57.0.0
-	golang.org/x/oauth2 v0.33.0
+	golang.org/x/oauth2 v0.34.0
 )
 
 require (
